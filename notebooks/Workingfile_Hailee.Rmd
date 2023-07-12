@@ -1,0 +1,337 @@
+---
+title: "W271 Group Lab 2"
+subtitle: "The Keeling Curve"
+author: "Adam Kreitzman, Hailee Schuele, Lee Perkins, Paul Cooper"
+output: bookdown::pdf_document2
+fontsize: 11pt
+geometry: margin=1in
+---
+
+```{r load packages, echo = FALSE, message = FALSE}
+library(tidyverse)
+library(tsibble)
+library(forecast)
+library(tseries)
+# library(latex2exp)
+# library(patchwork)
+# library(lmtest)
+library(ggplot2)
+# library(car)
+library(dplyr)
+# library(nnet)
+# library(GGally)
+# library(gridExtra)
+# library(magrittr)
+library(lubridate)
+library(feasts)
+# library(sandwich)
+library(fable)
+# library(httr)
+# library(readr)
+# library(jsonlite)
+
+set.seed(123)
+theme_set(theme_minimal())
+knitr::opts_chunk$set(dpi=1000)
+```
+
+```{r load data}
+df <- co2 %>%
+  as_tsibble(index = index)
+```
+
+
+# Part A - 1997
+
+
+## Introduction
+
+### DELETE notes
+Introduce the question to your audience. Suppose that they _could_ be interested in the question, but they don't have a deep background in the area. What is the question that you are addressing, why is it worth addressing, and what are you going to find at the completion of your analysis. Here are a few resource that you might use to start this motivation. 
+
+- [Wikipedia](https://en.wikipedia.org/wiki/Keeling_Curve)
+- [First Publication](./background/keeling_tellus_1960.pdf)
+- [Autobiography of Keeling](./background/keeling_annual_review.pdf)
+
+
+## CO2 Data
+
+### DELETE notes
+- EDA
+- How, where and why (https://gml.noaa.gov/ccgg/about/co2_measurements.html) the data is generated, 
+- Investigation of the trend, seasonal and irregular elements. Trends both in levels and growth rates should be discussed (consider expressing longer-run growth rates as annualized averages).
+
+### Content
+```{r time series plot}
+df %>%
+  autoplot(value)
+```
+
+```{r acf plot}
+df %>%
+  ACF(value) %>%
+  autoplot()
+```
+
+```{r pacf plot}
+df %>%
+  PACF(value) %>%
+  autoplot()
+```
+
+```{r lag plot}
+df %>%
+  gg_lag(value, geom = "point", color = 1) +
+  labs(title = "Lag Plot")
+```
+
+
+
+```{r seasonal plot}
+df %>%
+  gg_season(value, period = "year") +
+  labs(title = "Annual Seasonal Plot")
+```
+
+
+```{r unit root test}
+# DEL need to to an adf test also?
+
+PP.test(df$value)
+```
+
+
+```{r growth rate}
+# DEL how do I do this? Trends both in levels and growth rates should be discussed (consider expressing longer-run growth rates as annualized averages).
+```
+
+
+### Discussion
+The time series plot shows an upward trend with seasonal components that have standard variance. This is supported by the lack of decline in the ACF, which indicates a trend. The slow decline in ACF could indicate an ARIMA process. The time series and ACF both point to a non-stationary process. The PACF also drops off rapidly after the first lag, which is characteristic of non-stationarity coming from a trend and seasonality. 
+
+The lag plots are incredibly linear, which is a sign of seasonality. This seasonality can be seen in the annual seasonal plot. In this one, there seems to be a consistent increase in CO2 during the spring/early summer and a decrease in the early fall.
+
+#### DEL is this correct? Doesn't look stationary
+The Phillips Perron Test returns a significant p-value, which suggests there is stationarity. 
+
+#### DEL what does this mean?
+The PACF oscillates with a few significant lags here and there.
+
+
+## Linear time trend model
+
+### DELETE notes
+- Fit a linear time trend model to the `co2` series, and examine the characteristics of the residuals
+- Compare this to a quadratic time trend model
+- Discuss whether a logarithmic transformation of the data would be appropriate
+- Fit a polynomial time trend model that incorporates seasonal dummy variables, and use this model to generate forecasts to the year 2020. 
+
+### Content
+```{r linear model}
+linear_model <- df %>%
+  model(lm = TSLM(value ~ index))
+
+linear_model %>%
+  report()
+```
+
+```{r linear residuals}
+# Time vs Residuals line plot
+linear_model %>%
+  augment %>%
+  autoplot(.resid) +
+  labs(title = "Time Plot of Residuals - Linear Model")
+```
+
+```{r quadratic model}
+# Cast index as a numeric variable
+df$num_index <- as.numeric(df$index) - min(as.numeric(df$index))
+
+# Fit quadratic model
+quad_model <- df %>%
+  model(lm = TSLM(value ~  poly(num_index, degree = 2, raw = TRUE)))
+
+quad_model %>%
+  report()
+
+# DEL confirmed get same coefficients as below
+# quad_model <- lm(value ~ poly(num_index, degree = 2, raw = TRUE), data = df)
+```
+
+```{r quadratic residuals}
+# Time vs Residuals line plot
+quad_model %>%
+  augment %>%
+  autoplot(.resid) +
+  labs(title = "Time Plot of Residuals - Quadratic Model")
+```
+
+```{r fit seasonal model}
+# Seasonal dummy variables
+df <- df %>%
+  mutate(month = lubridate::month(index))
+
+seasonal_dummies <- model.matrix(~ factor(month) - 1, data = df)
+
+colnames(seasonal_dummies) <- month.abb
+
+df <- dplyr::bind_cols(df, seasonal_dummies)
+
+# Fit polynomial model
+# DEL should degree = 2?
+poly_model <- df %>%
+  model(lm = TSLM(value ~  poly(num_index, degree = 2, raw = TRUE) + 
+                    Jan + Feb + Mar + Apr + May + Jun + Jul + Aug + Sep + Oct + Nov + Dec))
+
+poly_model %>%
+  report()
+```
+
+
+```{r poly forecast}
+# Create a new data frame for forecasting
+# DEL is all of this necessary?
+new_data <- data.frame(num_index = max(df$num_index) + 1:276)
+
+new_data$month <- 1:12
+new_data$month <- rep(new_data$month, length.out = nrow(new_data))
+
+new_data$values <- NA
+
+seasonal_dummies <- model.matrix(~ factor(month) - 1, data = new_data)
+colnames(seasonal_dummies) <- month.abb
+new_data <- cbind(new_data, seasonal_dummies)
+
+index_sequence <- seq.Date(as.Date(paste(1998, "01", "01", sep = "-")), as.Date(paste(2020, "12", "01", sep = "-")), by = "month")
+new_data$index <- yearmonth(index_sequence)
+
+df_forecast <- df
+df_forecast <- dplyr::bind_rows(df_forecast, new_data)
+
+# Forecast
+forecast_poly_model <- forecast(poly_model, new_data = df_forecast)
+
+forecast_poly_model %>%
+  autoplot(df_forecast)
+```
+
+
+### Discussion
+The residuals of the linear model do not appear to be white noise. The residuals of the quadratic model are closer to white noise.
+
+Log transformations are generally used to stabalize variance, which does not seem to be needed here.
+
+
+## ARIMA times series model 
+
+### DELETE notes
+- Following all appropriate steps, choose an ARIMA model to fit to the series. 
+- Discuss the characteristics of your model and how you selected between alternative ARIMA specifications. 
+- Use your model (or models) to generate forecasts to the year 2022. 
+
+### Content
+
+```{r fit arima model}
+# DEL confirm should include 1 (i.e. drift)
+# DEL why doesn't it work when try to set PDQ values?
+# DEL Vinod - For the purposes of the lab, you should focus on fitting an ARIMA model not a SARIMA model.
+
+arima_model_aic <- df %>%
+  model(ARIMA(value ~ 1 + pdq(1:10,1:2,1:10) + PDQ(0,0,0), ic = "aic", stepwise = FALSE, greedy = FALSE))
+
+arima_model_aic %>%
+  report()
+
+
+arima_model_bic <- df %>%
+  model(ARIMA(value ~ 1 + pdq(1:10,1:2,1:10) + PDQ(0,0,0), ic="bic", stepwise=FALSE, greedy=FALSE))
+
+arima_model_bic %>%
+  report()
+```
+
+```{r arima forecast}
+arima_model <- df %>%
+  model(ARIMA(value ~ 1 + pdq(2,1,4) + PDQ(0,0,0)))
+
+forecast_arima_model <- forecast(arima_model, h = 288)
+
+forecast_arima_model %>%
+  autoplot(df)
+```
+
+
+### Discussion
+Both the AIC and BIC models selected ARIMA(2,1,4). Differencing makes sense because it looked like there was non-stationarity. 
+
+
+## Forecast atmospheric CO2 growth 
+
+### DELETE notes
+- Generate predictions for when atmospheric CO2 is expected to be at 420 ppm and 500 ppm levels for the first and final times (consider prediction intervals as well as point estimates in your answer). 
+- Generate a prediction for atmospheric CO2 levels in the year 2100. How confident are you that these will be accurate predictions?
+
+### Content
+
+```{r predictions}
+# Predict 
+forecast_arima_model_2100 <- forecast(arima_model, h = 5000)
+# forecast_arima_model_2100
+
+# DEL only doing point estimates, need to also take into account prediction interval
+# First and last occurrence of 420ppm
+first_420 <- min(forecast_arima_model_2100$index[forecast_arima_model_2100$.mean >= 420])
+# DEL fix this
+last_420 <- max(forecast_arima_model_2100$index[forecast_arima_model_2100$.mean >= 420])
+
+first_420
+last_420
+
+# First and last occurrence of 500ppm
+first_500 <- min(forecast_arima_model_2100$index[forecast_arima_model_2100$.mean >= 500])
+# DEL fix this
+last_500 <- max(forecast_arima_model_2100$index[forecast_arima_model_2100$.mean >= 500])
+
+first_500
+last_500
+
+# tail(forecast_arima_model_2100, 1)$value
+# tail(forecast_arima_model_2100)$value
+```
+
+
+```{r year 2100}
+co2_2100 <- forecast_arima_model_2100 %>%
+  filter(yearmonth(index) >= yearmonth("2100 Jan") & yearmonth(index) <= yearmonth("2100 Dec")) %>%
+  summarise(mean_2100 = .mean)
+
+co2_2100
+```
+
+
+
+### Discussion
+Based on the newer science around climate change, specifically atmospheric levels of CO2 increasing exponentially, I'm not very confident in the estimates of this ARIMA model.
+
+It's hard to get a "last" value because the variances are so wide the farther you go out
+
+
+
+# Part B - The Present
+
+
+## Introduction
+
+### DELETE notes
+- briefly pose the question that you are evaluating, and describe what (if anything) has changed in the data generating process between 1997 and the present. 
+
+### Discussion
+
+
+## Data Pipeline for Mona Loa CO2 data
+
+
+
+
+
+
