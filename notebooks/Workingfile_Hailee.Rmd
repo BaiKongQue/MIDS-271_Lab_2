@@ -46,7 +46,7 @@ df <- co2 %>%
 
 ## Introduction
 
-### DELETE notes
+### Notes
 Introduce the question to your audience. Suppose that they _could_ be interested in the question, but they don't have a deep background in the area. What is the question that you are addressing, why is it worth addressing, and what are you going to find at the completion of your analysis. Here are a few resource that you might use to start this motivation. 
 
 - [Wikipedia](https://en.wikipedia.org/wiki/Keeling_Curve)
@@ -56,7 +56,7 @@ Introduce the question to your audience. Suppose that they _could_ be interested
 
 ## CO2 Data
 
-### DELETE notes
+### Notes
 - EDA
 - How, where and why (https://gml.noaa.gov/ccgg/about/co2_measurements.html) the data is generated, 
 - Investigation of the trend, seasonal and irregular elements. Trends both in levels and growth rates should be discussed (consider expressing longer-run growth rates as annualized averages).
@@ -120,7 +120,7 @@ The PACF oscillates with a few significant lags here and there.
 
 ## Linear time trend model
 
-### DELETE notes
+### Notes
 - Fit a linear time trend model to the `co2` series, and examine the characteristics of the residuals
 - Compare this to a quadratic time trend model
 - Discuss whether a logarithmic transformation of the data would be appropriate
@@ -224,7 +224,7 @@ Log transformations are generally used to stabalize variance, which does not see
 
 ## ARIMA times series model 
 
-### DELETE notes
+### Notes
 - Following all appropriate steps, choose an ARIMA model to fit to the series. 
 - Discuss the characteristics of your model and how you selected between alternative ARIMA specifications. 
 - Use your model (or models) to generate forecasts to the year 2022. 
@@ -241,6 +241,9 @@ arima_model_aic <- df %>%
 
 arima_model_aic %>%
   report()
+
+# arima_model_aic_test <- df %>%
+#   model(ARIMA(value ~ 1 + pdq(0:10,0:2,0:10) + PDQ(0:10,0:2,0:10), ic = "aic", stepwise = FALSE, greedy = FALSE))
 
 
 arima_model_bic <- df %>%
@@ -267,7 +270,7 @@ Both the AIC and BIC models selected ARIMA(2,1,4). Differencing makes sense beca
 
 ## Forecast atmospheric CO2 growth 
 
-### DELETE notes
+### Notes
 - Generate predictions for when atmospheric CO2 is expected to be at 420 ppm and 500 ppm levels for the first and final times (consider prediction intervals as well as point estimates in your answer). 
 - Generate a prediction for atmospheric CO2 levels in the year 2100. How confident are you that these will be accurate predictions?
 
@@ -322,13 +325,177 @@ It's hard to get a "last" value because the variances are so wide the farther yo
 
 ## Introduction
 
-### DELETE notes
+### Notes
 - briefly pose the question that you are evaluating, and describe what (if anything) has changed in the data generating process between 1997 and the present. 
 
 ### Discussion
 
 
 ## Data Pipeline for Mona Loa CO2 data
+
+### Notes
+- Conduct the same EDA on this data using the same, or very similar tools and views as you provided in your 1997 report. 
+- Describe how the Keeling Curve evolved from 1997 to the present, noting where the series seems to be following similar trends to the series that you "evaluated in 1997" and where the series seems to be following different trends.
+
+### Content
+```{r read weekly mona loa data}
+# Read in data
+co2_present <- read.csv("co2_weekly_mlo.csv", comment.char = "#")
+
+# Cast as tsibble
+# DELETE figure out what the -999.99 average values mean
+co2_present <- co2_present %>%
+  mutate(time_index = yearweek(lubridate::make_datetime(year, month, day))) %>%
+  filter(average >= 0) %>%
+  as_tsibble(index = time_index)
+```
+
+```{r present time series plot}
+co2_present %>%
+  autoplot(average)
+```
+
+```{r present acf plot}
+co2_present %>%
+  tsibble::fill_gaps() %>%
+  ACF(average) %>%
+  autoplot()
+```
+
+```{r present pacf plot}
+co2_present %>%
+  tsibble::fill_gaps() %>%
+  PACF(average) %>%
+  autoplot()
+```
+
+```{r present lag plot}
+co2_present %>%
+  gg_lag(average, geom = "point", color = 1) +
+  labs(title = "Lag Plot")
+```
+
+
+
+```{r seasonal plot}
+co2_present %>%
+  tsibble::fill_gaps() %>%
+  gg_season(average, period = "year") +
+  labs(title = "Annual Seasonal Plot")
+```
+
+
+
+
+### Discussion
+Similar to the 1997 data,the time series plot shows an upward trend with seasonal components. Trends and seasonality are also supported by the ACF, PACF, and lag plot. The seasonal plot again shows increase in CO2 during the spring/early summer and a decrease in the early fall.
+
+All in all, this is very similar to the data we saw in 1997. Perhaps even more linear.
+
+
+
+## Compare linear model forecasts against realized CO2
+
+### Notes
+- Descriptively compare realized atmospheric CO2 levels to those predicted by your forecast from a linear time model in 1997 (i.e. "Task 2a"). (You do not need to run any formal tests for this task.) 
+
+### Content
+```{r linear forecast compare}
+# Linear model predictions
+# (2023 - 1997) years * 12 months = 312
+forecast_linear_model <- forecast(linear_model, h = 312)
+
+# Aggregate weekly data to monthly
+# DELETE confirm this is correct, don't think it's calculating right
+co2_present_agg <- co2_present %>%
+  tsibble::index_by(yearmonth = yearmonth(time_index)) %>%
+  summarise(monthly_average = mean(average)) %>%
+  filter(yearmonth > yearmonth("1997 Dec"))
+
+# Merge forecast data onto mone loa data
+co2_present_agg <- merge(co2_present_agg, forecast_linear_model[, c("index", ".mean")],
+                          by.x = "yearmonth", by.y = "index")
+# Calculate residuals 
+co2_present_agg <- rename(co2_present_agg, linear_monthly_average = .mean) %>%
+  mutate(linear_residual = monthly_average - linear_monthly_average)
+
+# Plot residuals
+co2_present_agg %>%
+  ggplot(aes(x = yearmonth, y = linear_residual)) +
+  geom_point()
+```
+
+### Discussion
+
+
+
+## Compare ARIMA models forecasts against realized CO2  
+
+### Notes
+- Descriptively compare realized atmospheric CO2 levels to those predicted by your forecast from the ARIMA model that you fitted in 1997 (i.e. "Task 3a"). 
+- Describe how the Keeling Curve evolved from 1997 to the present. 
+
+### Content
+```{r arima forecast compare}
+# ARIMA model predictions
+forecast_arima_model <- forecast(arima_model, h = 312)
+
+# Merge forecast data onto mone loa data
+co2_present_agg <- merge(co2_present_agg, forecast_arima_model[, c("index", ".mean")],
+                          by.x = "yearmonth", by.y = "index")
+# Calculate residuals 
+co2_present_agg <- rename(co2_present_agg, arima_monthly_average = .mean) %>%
+  mutate(arima_residual = monthly_average - arima_monthly_average)
+
+# Plot residuals
+co2_present_agg %>%
+  ggplot(aes(x = yearmonth, y = arima_residual)) +
+  geom_point()
+```
+
+### Discussion
+
+
+## Evaluate the performance of 1997 linear and ARIMA models 
+
+### Notes
+- How close was arima model to the truth about when CO2 would cross 420 ppm?
+- Use the weekly data to generate a month-average series from 1997 to the present, and compare the overall forecasting performance of your models from Parts 2a and 3b over the entire period. (You should conduct formal tests for this task.) 
+
+### Content
+```{r 420 threshold}
+min(co2_present_agg$yearmonth[co2_present_agg$monthly_average >= 420])
+```
+```{r formal test}
+# DELETE What formal test should we use?
+```
+
+
+### Discussion
+
+
+
+## Train best models on present data
+
+### Notes
+- Seasonally adjust the weekly NOAA data, and split both seasonally-adjusted (SA) and non-seasonally-adjusted (NSA) series into training and test sets, using the last two years of observations as the test sets. 
+- For both SA and NSA series, fit ARIMA models using all appropriate steps. 
+- Measure and discuss how your models perform in-sample and (psuedo-) out-of-sample, comparing candidate models and explaining your choice.
+- Fit a polynomial time-trend model to the seasonally-adjusted series and compare its performance to that of your ARIMA model.
+
+### Content
+
+
+### Discussion
+
+## How bad could it get?
+### Notes
+- With the non-seasonally adjusted data series, generate predictions for when atmospheric CO2 is expected to be at 420 ppm and 500 ppm levels for the first and final times (consider prediction intervals as well as point estimates in your answer). 
+- Generate a prediction for atmospheric CO2 levels in the year 2122. How confident are you that these will be accurate predictions?
+
+### Content
+
+### Discussion
 
 
 
