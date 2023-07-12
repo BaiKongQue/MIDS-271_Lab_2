@@ -484,6 +484,38 @@ min(co2_present_agg$yearmonth[co2_present_agg$monthly_average >= 420])
 - Fit a polynomial time-trend model to the seasonally-adjusted series and compare its performance to that of your ARIMA model.
 
 ### Content
+```{r nsa}
+# Split series into train and test sets
+# Data goes through 2023 W26
+nsa_train <- co2_present %>%
+  filter(time_index < yearweek("2021 W26"))
+
+nsa_test <- co2_present %>%
+  filter(time_index >= yearweek("2021 W26"))
+
+# Fit NSA arima models
+# DELETE get order constraint again
+nsa_model_aic <- nsa_train %>%
+  tsibble::fill_gaps() %>%
+  model(ARIMA(average ~ 1 + pdq(1:10,1:2,1:10) + PDQ(0,0,0), ic = "aic", stepwise = FALSE, greedy = FALSE))
+
+nsa_model_aic %>%
+  report()
+
+nsa_model_bic <- nsa_train %>%
+  tsibble::fill_gaps() %>%
+  model(ARIMA(average ~ 1 + pdq(1:10,1:2,1:10) + PDQ(0,0,0), ic = "bic", stepwise = FALSE, greedy = FALSE))
+
+nsa_model_bic %>%
+  report()
+
+# Measure performance
+```
+
+```{r sa}
+# DELETE just difference to get SA?
+# sa <- 
+```
 
 
 ### Discussion
