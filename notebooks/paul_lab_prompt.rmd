@@ -17,6 +17,11 @@ library(tsibble)
 library(latex2exp)
 library(tseries)
 library(forecast)
+library(fable)
+library(plyr)
+library(dplyr)
+library(ggplot2)
+library(feasts)
 
 theme_set(theme_minimal())
 knitr::opts_chunk$set(dpi=1000)
@@ -64,7 +69,9 @@ Conduct a comprehensive Exploratory Data Analysis on the `co2` series. This shou
 What you report in the deliverable should not be your own process of discovery, but rather a guided discussion that you have constructed so that your audience can come to an understanding as succinctly and successfully as possible. This means that figures should be thoughtfully constructed and what you learn from them should be discussed in text; to the extent that there is _any_ raw output from your analysis, you should intend for people to read and interpret it, and you should write your own interpretation as well. 
 
 ```{r eda}
-co2_ts <- as_tsibble(co2) %>%
+co2_ts <- as_tsibble(co2) 
+
+co2_ts <- co2_ts %>%
   mutate(t = co2_ts$index - co2_ts$index[1]) %>%
   mutate(ln_val = log(value)) %>%
   mutate(
@@ -86,7 +93,6 @@ Fit a linear time trend model to the `co2` series, and examine the characteristi
 m_lin <- lm(formula = ln_val ~ t, data = co2_ts)
 m_quad <- lm(formula = ln_val ~ I(t^2) + t, data = co2_ts)
 m_pol <- co2_ts %>% model(lm = TSLM(ln_val ~ t + I(t^2) + trend() + season()))
-
 
 m_lin_res <- m_lin$residuals
 m_quad_res <- m_quad$residuals
@@ -124,7 +130,6 @@ poly_plot <- co2_ts %>%
     y = TeX(r'(Log of $CO_2$ parts per million)')
   )
 
-lin_plot | quad_plot | poly_plot
 
 m_pol %>% gg_tsresiduals()
 
@@ -162,7 +167,6 @@ Box Jenkins:
 Generate predictions for when atmospheric CO2 is expected to be at [420 ppm](https://research.noaa.gov/article/ArtMID/587/ArticleID/2764/Coronavirus-response-barely-slows-rising-carbon-dioxide) and 500 ppm levels for the first and final times (consider prediction intervals as well as point estimates in your answer). Generate a prediction for atmospheric CO2 levels in the year 2100. How confident are you that these will be accurate predictions?
 
 ```{r forecast 1997}
-
 h_calc <- (2100 - 1998) * 12 +1
 forecast_1997 <- forecast(model_bic, h=h_calc)
 
@@ -175,8 +179,14 @@ jan_2100_dist
 first_420_mean <- forecast_1997 %>% filter(.mean > 420)
 first_420_mean$index[1]
 
-"OK, I can read the friggin' Normal parameters, but how do I extract them? If I extract them, I can add a low and high confidence interval to the forecasts and find the first and last instance where the intervale crosses 420"
-forecast_1997$value[1]
+
+fc_hilo <- forecast_1997 %>% hilo() %>% unpack_hilo('95%') %>% rename(replace=c('95%_upper' = 'upper_95'))%>% rename(replace=c('95%_lower' = 'lower_95'))
+
+first_420_upper <- fc_hilo %>% filter(upper_95 > 420)
+first_420_upper$index[1]
+
+last_420_lower <- fc_hilo %>% filter(lower_95 > 420)
+last_420_lower$index[1]
 ```
 
 # Report from the Point of View of the Present 
