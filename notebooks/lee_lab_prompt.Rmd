@@ -342,6 +342,70 @@ After reflecting on your performance on this threshold-prediction task, continue
 
 Seasonally adjust the weekly NOAA data, and split both seasonally-adjusted (SA) and non-seasonally-adjusted (NSA) series into training and test sets, using the last two years of observations as the test sets. For both SA and NSA series, fit ARIMA models using all appropriate steps. Measure and discuss how your models perform in-sample and (psuedo-) out-of-sample, comparing candidate models and explaining your choice. In addition, fit a polynomial time-trend model to the seasonally-adjusted series and compare its performance to that of your ARIMA model.
 
+```{r train best models on weekly NOAA data}
+# co2_present_ts
+
+# Split the data into training and testing sets. The training set will be all data up to the last two years, 
+# and the test set will be the last two years of data
+split_date <- max(co2_present_ts$time_index) - lubridate::years(2)
+train_data <- co2_present_ts %>% filter(time_index <= split_date)
+test_data <- co2_present_ts %>% filter(time_index > split_date)
+
+# Decompose the time series
+co2_decomposition <- train_data %>% model(STL(average ~ season(window = 52)))
+
+# Extract components
+components <- co2_decomposition %>% components()
+
+# Add the seasonal component to the original tsibble
+# train_data <- train_data %>% left_join(components, by = "time_index", suffix = c("", "_season"))
+train_data_season <- train_data %>% mutate(season_adjust = components$season_adjust)
+
+# Fit the ARIMA model to the non-seasonally adjusted data
+nsa_model <- train_data %>%
+  model(ARIMA(average ~ pdq(0:10,0:3,0:10) + PDQ(0:10,0:3,0:10)))
+
+# Fit the ARIMA model to the seasonally adjusted data
+sa_model <- train_data_season %>%
+  model(ARIMA(season_adjust ~ pdq(0:10,0:3,0:10) + PDQ(0:10,0:3,0:10)))
+
+# Forecast the next 'n' periods for the NSA model
+nsa_forecast <- nsa_model %>%
+  forecast(h = "2 years")
+
+# Forecast the next 'n' periods for the SA model
+sa_forecast <- sa_model %>%
+  forecast(h = "2 years")
+
+# Compute the training accuracy
+# nsa_train_accuracy <- nsa_model %>% accuracy(train_data)
+# sa_train_accuracy <- sa_model %>% accuracy(train_data)
+# train_data
+```
+
+```{r}
+# Plot the training data and the forecast for the NSA model
+nsa_forecast %>%
+  autoplot(test_data) +
+  labs(
+    title = "Forecast of CO2 Levels (NSA)",
+    x = "Year",
+    y = "CO2 Levels (ppm)"
+  )
+
+# Plot the training data and the forecast for the SA model
+co2_test_decomp <- test_data %>% model(STL(average ~ season(window = 52)))
+test_data_season <- test_data %>% mutate(season_adjust = components(co2_test_decomp)$season_adjust)
+test_data_avg <- test_data %>% mutate(season_adjust = average)
+sa_forecast %>%
+  autoplot(test_data_season) +
+  labs(
+    title = "[season_adjust] Forecast of CO2 Levels (SA)",
+    x = "Year",
+    y = "CO2 Levels (ppm)"
+  )
+```
+
 ## (3 points) Task Part 6b: How bad could it get?
 
 With the non-seasonally adjusted data series, generate predictions for when atmospheric CO2 is expected to be at 420 ppm and 500 ppm levels for the first and final times (consider prediction intervals as well as point estimates in your answer). Generate a prediction for atmospheric CO2 levels in the year 2122. How confident are you that these will be accurate predictions?
