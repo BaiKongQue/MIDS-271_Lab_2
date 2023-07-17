@@ -306,16 +306,6 @@ Descriptively compare realized atmospheric CO2 levels to those predicted by your
 co2_present_model <- co2_present_ts %>% model(ARIMA(average ~ 1 + pdq(0:10,0:3,0:10) + PDQ(0:10,0:3,0:10), ic="bic", stepwise=F, greedy=F))
 co2_present_model %>% report()
 co2_present_model %>% augment() %>% ACF(.resid) %>% autoplot()
-
-# # transform ts from weekly to yearmonth averages
-# co2_present_ts_month <- co2_present_ts %>%
-#     mutate(
-#         ym = yearmonth(time_index)
-#     ) %>%
-#     group_by(ym) %>%
-#     summarise(average = mean(average, na.rm = T)) %>%
-#     ungroup() %>%
-#     as_tsibble(index = time_index)
 ```
 
 ## (3 points) Task 4b: Evaluate the performance of 1997 linear and ARIMA models 
@@ -336,7 +326,16 @@ co2_forecast[0:480,] %>%
 
 After reflecting on your performance on this threshold-prediction task, continue to use the weekly data to generate a month-average series from 1997 to the present, and compare the overall forecasting performance of your models from Parts 2a and 3b over the entire period. (You should conduct formal tests for this task.) 
 
-
+```{r present month-average series}
+co2_monthly_ts <- co2_present_ts %>%
+    data.frame() %>%
+    filter(time_index >= "1997-01-01") %>%
+    mutate(ym = yearmonth(time_index)) %>%
+    select(-time_index) %>%
+    group_by(ym) %>%
+    summarise(average = mean(average)) %>%
+    as_tsibble(index = ym)
+```
 
 ## (4 points) Task 5b: Train best models on present data
 
@@ -347,9 +346,9 @@ Seasonally adjust the weekly NOAA data, and split both seasonally-adjusted (SA) 
 
 # Split the data into training and testing sets. The training set will be all data up to the last two years, 
 # and the test set will be the last two years of data
-split_date <- max(co2_present_ts$time_index) - lubridate::years(2)
-train_data <- co2_present_ts %>% filter(time_index <= split_date)
-test_data <- co2_present_ts %>% filter(time_index > split_date)
+split_date <- max(co2_monthly_ts$ym) - 24   # 2 * 12months
+train_data <- co2_monthly_ts %>% filter(ym <= split_date)
+test_data <- co2_monthly_ts %>% filter(ym > split_date)
 
 # Decompose the time series
 co2_decomposition <- train_data %>% model(STL(average ~ season(window = 52)))
@@ -394,11 +393,11 @@ nsa_forecast %>%
   )
 
 # Plot the training data and the forecast for the SA model
-co2_test_decomp <- test_data %>% model(STL(average ~ season(window = 52)))
-test_data_season <- test_data %>% mutate(season_adjust = components(co2_test_decomp)$season_adjust)
+# co2_test_decomp <- test_data %>% model(STL(average ~ season(window = 52)))
+# test_data_season <- test_data %>% mutate(season_adjust = components(co2_test_decomp)$season_adjust)
 test_data_avg <- test_data %>% mutate(season_adjust = average)
 sa_forecast %>%
-  autoplot(test_data_season) + # replace with test_data_season or test_data_avg
+  autoplot(test_data_avg) + # replace with test_data_season or test_data_avg
   labs(
     title = "[season_adjust] Forecast of CO2 Levels (SA)",
     x = "Year",
