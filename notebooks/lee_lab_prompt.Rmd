@@ -398,7 +398,7 @@ co2_test_decomp <- test_data %>% model(STL(average ~ season(window = 52)))
 test_data_season <- test_data %>% mutate(season_adjust = components(co2_test_decomp)$season_adjust)
 test_data_avg <- test_data %>% mutate(season_adjust = average)
 sa_forecast %>%
-  autoplot(test_data_season) +
+  autoplot(test_data_season) + # replace with test_data_season or test_data_avg
   labs(
     title = "[season_adjust] Forecast of CO2 Levels (SA)",
     x = "Year",
