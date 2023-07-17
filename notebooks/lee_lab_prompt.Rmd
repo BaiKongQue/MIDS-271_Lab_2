@@ -122,8 +122,9 @@ LinearModels <- function(data, x, y) {
     # Linear time trend model
     co2_lm <- lm(as.formula(paste(y, "~ t")), data = data)
     co2_lm_quad <- lm(as.formula(paste(y, "~ t + I(t^2)")), data = data)
-    tslm_model <- TSLM(as.formula(paste(y, "~ poly(",x,", degree = 2, raw = TRUE) + factor(month)")))
-    co2_lm_poly <- data %>% model(lm = tslm_model)
+    # tslm_model <- TSLM(as.formula(paste(y, "~ poly(",x,", degree = 2, raw = TRUE) + factor(month)")))
+    # co2_lm_poly <- data %>% model(lm = tslm_model)
+    co2_lm_poly <- lm(as.formula(paste(y, "~ poly(",x,", degree = 2, raw = TRUE)")), data = data)
 
     # plot with lm line
     co2_lm_plot <- data %>%
@@ -147,8 +148,19 @@ LinearModels <- function(data, x, y) {
             y = TeX(r'($CO_2$ parts per million)')
         )
 
-    # return(co2_lm_plot / co2_lm_quad_plot)
-    co2_lm_poly %>% gg_tsresiduals()
+    # plot lm_poly
+    co2_lm_poly_plot <- data %>%
+        ggplot(aes(x = !!sym(x), y = !!sym(y))) +
+        geom_line(color = 'steelblue') +
+        geom_line(aes(y = predict(co2_lm_poly, data)), color = 'red') +
+        labs(
+            title = TeX(r'(Monthly Mean $CO_2$ fitted with polynomial trend)'),
+            x = 'Month and Year',
+            y = TeX(r'($CO_2$ parts per million)')
+        )
+
+    return(co2_lm_plot / co2_lm_quad_plot / co2_lm_poly_plot)
+    # co2_lm_poly %>% gg_tsresiduals()
 }
 
 LinearModels(co2_ts, 'index', 'value')
@@ -170,7 +182,7 @@ co2_model %>% augment() %>% ACF(.resid) %>% autoplot()
 Generate predictions for when atmospheric CO2 is expected to be at [420 ppm](https://research.noaa.gov/article/ArtMID/587/ArticleID/2764/Coronavirus-response-barely-slows-rising-carbon-dioxide) and 500 ppm levels for the first and final times (consider prediction intervals as well as point estimates in your answer). Generate a prediction for atmospheric CO2 levels in the year 2100. How confident are you that these will be accurate predictions?
 
 ```{r forecast atmospheric CO2 growth}
-h_calc <- (2100 - 1998) * 12 +1
+h_calc <- (2100 - 1998) * 12 + 1
 # Forecast atmospheric CO2 growth
 co2_forecast <- co2_model %>% forecast(h=h_calc)
 # plot forcast and actual values from co2_ts
@@ -334,7 +346,18 @@ co2_monthly_ts <- co2_present_ts %>%
     select(-time_index) %>%
     group_by(ym) %>%
     summarise(average = mean(average)) %>%
+    mutate(t = ym - ym[1]) %>%
     as_tsibble(index = ym)
+```
+
+```{r present month-average forecast linear model test}
+LinearModels(co2_monthly_ts, "ym", "average")
+```
+
+```{r present month-average ARIMA test}
+co2_monthly_arima_model <- co2_monthly_ts %>% model(ARIMA(average ~ 1 + pdq(0:10,0:3,0:10) + PDQ(0:10,0:3,0:10), ic="bic", stepwise=F, greedy=F))
+co2_present_model %>% report()
+co2_present_model %>% augment() %>% ACF(.resid) %>% autoplot()
 ```
 
 ## (4 points) Task 5b: Train best models on present data
@@ -342,16 +365,19 @@ co2_monthly_ts <- co2_present_ts %>%
 Seasonally adjust the weekly NOAA data, and split both seasonally-adjusted (SA) and non-seasonally-adjusted (NSA) series into training and test sets, using the last two years of observations as the test sets. For both SA and NSA series, fit ARIMA models using all appropriate steps. Measure and discuss how your models perform in-sample and (psuedo-) out-of-sample, comparing candidate models and explaining your choice. In addition, fit a polynomial time-trend model to the seasonally-adjusted series and compare its performance to that of your ARIMA model.
 
 ```{r train best models on weekly NOAA data}
-# co2_present_ts
-
 # Split the data into training and testing sets. The training set will be all data up to the last two years, 
 # and the test set will be the last two years of data
-split_date <- max(co2_monthly_ts$ym) - 24   # 2 * 12months
-train_data <- co2_monthly_ts %>% filter(ym <= split_date)
-test_data <- co2_monthly_ts %>% filter(ym > split_date)
+
+# split_date <- max(co2_monthly_ts$ym) - 24   # 2 * 12months
+# train_data <- co2_monthly_ts %>% filter(ym <= split_date)
+# test_data <- co2_monthly_ts %>% filter(ym > split_date)
+
+split_date <- max(co2_present_ts$time_index) - lubridate::years(2)
+train_data <- co2_present_ts %>% filter(time_index <= split_date)
+test_data <- co2_present_ts %>% filter(time_index > split_date)
 
 # Decompose the time series
-co2_decomposition <- train_data %>% model(STL(average ~ season(window = 52)))
+co2_decomposition <- train_data %>% model(STL(average ~ season(window = 12)))
 
 # Extract components
 components <- co2_decomposition %>% components()
@@ -385,24 +411,51 @@ sa_forecast <- sa_model %>%
 ```{r}
 # Plot the training data and the forecast for the NSA model
 nsa_forecast %>%
-  autoplot(test_data) +
-  labs(
-    title = "Forecast of CO2 Levels (NSA)",
-    x = "Year",
-    y = "CO2 Levels (ppm)"
-  )
+    autoplot(test_data) +
+    labs(
+        title = "Forecast of CO2 Levels (NSA)",
+        x = "Year",
+        y = "CO2 Levels (ppm)"
+    )
 
 # Plot the training data and the forecast for the SA model
-# co2_test_decomp <- test_data %>% model(STL(average ~ season(window = 52)))
-# test_data_season <- test_data %>% mutate(season_adjust = components(co2_test_decomp)$season_adjust)
+co2_test_decomp <- test_data %>% model(STL(average ~ season(window = 12)))
+test_data_season <- test_data %>% mutate(season_adjust = components(co2_test_decomp)$season_adjust)
 test_data_avg <- test_data %>% mutate(season_adjust = average)
 sa_forecast %>%
-  autoplot(test_data_avg) + # replace with test_data_season or test_data_avg
-  labs(
-    title = "[season_adjust] Forecast of CO2 Levels (SA)",
-    x = "Year",
-    y = "CO2 Levels (ppm)"
-  )
+    autoplot(test_data_avg) + # replace with test_data_season or test_data_avg
+    labs(
+        title = "[average] Forecast of CO2 Levels (SA)",
+        x = "Year",
+        y = "CO2 Levels (ppm)"
+    )
+```
+
+```{r}
+# fit a polynomial time-trend model to the seasonally-adjusted series and compare its performance to that of your ARIMA model.
+co2_lm_poly2 <- lm(average ~ poly(time_index, degree = 2, raw = TRUE), data = test_data)
+
+# Plot the co2_lm_poly2 against the test_data_avg
+test_data %>%
+    ggplot(aes(x = time_index, y = average)) +
+    geom_line() +
+    geom_line(aes(y = predict(co2_lm_poly2, test_data)), color = "red") +
+    labs(
+        title = "[test, average] Polynomial Time-Trend Model",
+        x = "Year",
+        y = "CO2 Levels (ppm)"
+    )
+
+co2_lm_poly3 <- lm(season_adjust ~ poly(time_index, degree = 2, raw = TRUE), data = train_data_season)
+train_data_season %>%
+    ggplot(aes(x = time_index, y = season_adjust)) +
+    geom_line() +
+    geom_line(aes(y = predict(co2_lm_poly3, train_data_season)), color = "red") +
+    labs(
+        title = "[train, season_adjust] Polynomial Time-Trend Model",
+        x = "Year",
+        y = "CO2 Levels (ppm)"
+    )
 ```
 
 ## (3 points) Task Part 6b: How bad could it get?
