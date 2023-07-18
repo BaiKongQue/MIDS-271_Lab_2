@@ -80,7 +80,7 @@ Data is captured at Mauna Loa for a multitude of reasons. Perhaps most obviously
 
 Co2 data shows several readily apparent patterns. First, daily levels peak at night and are lowest in the afternoons. More important for our purposes, there is clear seasonal behavior coinciding with the rise and fall of plant life on a macroscopic scale, with atmospheric averages peaking in May and bottoming out in September, as plants work to remove Co2 via photosynthesis.
 
-```{r gg_season}
+```{r gg_season, echo=FALSE}
 co2_ts %>%
   tsibble::fill_gaps() %>%
   gg_season(value, period = "year") +
@@ -89,7 +89,7 @@ co2_ts %>%
 
 Most notably, though, is the strong increasing trend on the long-term averages, with a rough average increase of 2.5 ppm per year. Additionally, the ACF and PCF plots show some characteristics of an AR(1) model:
 
-```{r full keeling curve plot}
+```{r full keeling curve plot, echo=FALSE}
 tsibble::as_tsibble(co2) %>%
     ggplot() + 
     aes(x=index, y=value) + 
@@ -102,14 +102,14 @@ tsibble::as_tsibble(co2) %>%
     )
 ```
 
-```{r 1997 acf}
+```{r 1997 acf, echo=FALSE}
 tsibble::as_tsibble(co2) %>%
     pull(value) %>%
     ggAcf() +
         labs(title = TeX(r'($CO_2$ ACF)'))
 ```
 
-```{r 1997 pacf}
+```{r 1997 pacf, echo=FALSE}
 tsibble::as_tsibble(co2) %>%
     pull(value) %>%
     ggPacf() +
@@ -124,7 +124,6 @@ With the Mauna Loa data at hand, we attempt a series of modeling techniques, sta
 Fitting linear and quadratic models to the overall dataset does a reasonable job of picking up the long-term trends of the data, but doesn't capture the seasonal aspects appropriately. A stronger model is obtained by using a polynomial model with dummy variables for month included, to capture the annual seasonal effects:
 
 ```{r 1997 model plots, echo=F, warning=F, fig.align='center'}
-# <linear & quadratic & poly model plots>
 LinearModels <- function(data, x, y) {
     # Linear time trend model
     co2_lm <- lm(as.formula(paste(y, "~ t")), data = data)
@@ -174,8 +173,8 @@ LinearModels(co2_ts, 'index', 'value')
 Finally, we fit an ARIMA model to the data, following the Box-Jenkins methodology. The Augmented Dickey-Fuller test failed to reject the null hypothesis, indicating stationarity. We proceeded to select our ARIMA model by minimizing BIC over reasonable parameters, and fit the following model:
 
 ```{r 1997 arima}
-# <Either nicely formatted text of the ARIMA(1,0,1)(4,1,0)[12], or the output of the model %>% report>
-co2_model <- co2_ts %>% model(ARIMA(value ~ 1 + pdq(0:15,0:2,0:15) + PDQ(0:10,0:2,0:10), ic="bic", stepwise=F, greedy=F))
+co2_model <- co2_ts %>% model(ARIMA(value ~ 1 + pdq(0:15,0:2,0:15) + 
+                                      PDQ(0:10,0:2,0:10), ic="bic", stepwise=F, greedy=F))
 co2_model %>% report()
 ```
 
@@ -194,9 +193,9 @@ co2_2022_forecast <- co2_model %>% forecast(h="24 years")
 
 Taking the ARIMA model, we also provide some estimates for when CO2 will cross several high thresholds. We've provided a lower bound, indicating the year and month when our forecast confidence interval first contains the threshold, an upper bound, indicating the last time our forecast interval contains the threshold, as well as our mean estimate:
 
-```{r forecast estimates}
-# <forecasts for 420/500 ppm>
+```{r forecast estimates, echo=F}
 h_calc <- (2100 - 1998) * 12 + 1
+
 # Forecast atmospheric CO2 growth
 co2_forecast <- co2_model %>% forecast(h=h_calc)
 
@@ -208,18 +207,35 @@ fc_hilo <- fc_hilo %>%
     rename(upper_95 = `95%_upper`) %>%
     rename(lower_95 = `95%_lower`)
 
+# 420 ppm 
 first_420_upper <- fc_hilo %>% filter(upper_95 > 420)
-# first_420_upper$index[1]
 
 last_420_lower <- fc_hilo %>% filter(lower_95 > 420)
-# last_420_lower$index[1]
+
+first_420_mean <- min(co2_forecast$index[co2_model$.mean >= 420])
 
 # 500 ppm
 first_500_upper <- fc_hilo %>% filter(upper_95 > 500)
-# first_500_upper$index[1]
 
 last_500_lower <- fc_hilo %>% filter(lower_95 > 500)
-# last_500_lower$index[1]
+
+first_500_mean <- min(co2_forecast$index[co2_model$.mean >= 500])
+```
+
+```{r threshold estimates}
+print("First 420 lower bound")
+print(last_420_lower$index[1])
+print("First 420 upper bound")
+print(first_420_upper$index[1])
+print("First 420 point estimate")
+print(first_420_mean)
+
+print("First 500 lower bound")
+print(last_500_lower$index[1])
+print("First 500 upper bound")
+print(first_500_upper$index[1])
+print("First 500 point estimate")
+print(first_500_mean)
 ```
 
 
@@ -229,7 +245,7 @@ Back in 1997, we made modeling decisions and predictions about atmospheric CO2 l
 
 The Keeling Curve has many similar aspects to our 1997 models, but there is a notable acceleration in the trend that was not fully anticipated. Still, we see strong indications from the ACF and PCF plots of an AR(1) model, with annual seasonal effects.
 
-```{r 2023 curve}
+```{r 2023 curve, echo=F}
 co2_present_ts %>%
     ggplot(aes(x = time_index, y = average)) +
     geom_line() +
@@ -240,14 +256,14 @@ co2_present_ts %>%
     )
 ```
 
-```{r 2023 acf}
+```{r 2023 acf, echo=F}
 co2_present_ts %>%
     pull(average) %>%
     ggAcf() +
         labs(title = TeX(r'(2023 $CO_2$ ACF)'))
 ```
 
-```{r 2023 pacf}
+```{r 2023 pacf, echo=F}
 co2_present_ts %>%
     pull(average) %>%
     ggPacf() +
@@ -259,20 +275,19 @@ co2_present_ts %>%
 
 In 1997, we made predictions about what the CO2 levels would be in January 2020. Below is a summary of those predictions, compared with the actuals measured at Mauna Loa:
 
-```{r comparison plot}
-# <That awesome plot of actuals vs our ARIMA prediction, with a subtitle>
-# [0:480,]
+```{r comparison plot, echo=F}
 co2_forecast %>%
     autoplot() +
     geom_line(aes(y = co2_present_ts$average, x = co2_present_ts$time_index), color = "red") +
     labs(
         title = TeX(r'(Monthly Mean $CO_2$ forecast)'),
+        subtitle = "Prediction in Blue, Actual in Red",
         x = 'Month and Year',
         y = TeX(r'($CO_2$ parts per million)')
     )
 ```
 
-```{r forecast table}
+```{r forecast table, ech=F}
 # <Table of forecasts and their errors for all 1997 models. Should be copy paste with a few extra columns from the 1997 section>
 co2_monthly_ts <- co2_present_ts %>%
     data.frame() %>%
