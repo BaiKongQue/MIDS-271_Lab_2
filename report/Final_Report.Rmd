@@ -196,14 +196,6 @@ Taking the ARIMA model, we also provide some estimates for when CO2 will cross s
 h_calc <- (2100 - 1998) * 12 + 1
 # Forecast atmospheric CO2 growth
 co2_forecast <- co2_model %>% forecast(h=h_calc)
-# plot forcast and actual values from co2_ts
-co2_forecast %>%
-    autoplot(co2_ts) +
-    labs(
-        title = TeX(r'(Monthly Mean $CO_2$ forecast)'),
-        x = 'Month and Year',
-        y = TeX(r'($CO_2$ parts per million)')
-    )
 
 fc_hilo <- co2_forecast %>%
     hilo() %>%
@@ -235,15 +227,28 @@ Back in 1997, we made modeling decisions and predictions about atmospheric CO2 l
 The Keeling Curve has many similar aspects to our 1997 models, but there is a notable acceleration in the trend that was not fully anticipated. Still, we see strong indications from the ACF and PCF plots of an AR(1) model, with annual seasonal effects.
 
 ```{r 2023 curve}
-
+co2_present_ts %>%
+    ggplot(aes(x = time_index, y = average)) +
+    geom_line() +
+    labs(
+        title = TeX(r'(Hourly Mean $CO_2$ Concentration at Mauna Loa Observatory)'),
+        x = 'Year',
+        y = TeX(r'($CO_2$ parts per million)')
+    )
 ```
 
 ```{r 2023 acf}
-
+co2_present_ts %>%
+    pull(average) %>%
+    ggAcf() +
+        labs(title = TeX(r'(2023 $CO_2$ ACF)'))
 ```
 
 ```{r 2023 pacf}
-
+co2_present_ts %>%
+    pull(average) %>%
+    ggPacf() +
+        labs(title = TeX(r'(2023 $CO_2$ PACF)'))
 ```
 
 
@@ -253,10 +258,48 @@ In 1997, we made predictions about what the CO2 levels would be in January 2020.
 
 ```{r comparison plot}
 # <That awesome plot of actuals vs our ARIMA prediction, with a subtitle>
+# [0:480,]
+co2_forecast %>%
+    autoplot() +
+    geom_line(aes(y = co2_present_ts$average, x = co2_present_ts$time_index), color = "red") +
+    labs(
+        title = TeX(r'(Monthly Mean $CO_2$ forecast)'),
+        x = 'Month and Year',
+        y = TeX(r'($CO_2$ parts per million)')
+    )
 ```
 
 ```{r forecast table}
 # <Table of forecasts and their errors for all 1997 models. Should be copy paste with a few extra columns from the 1997 section>
+co2_monthly_ts <- co2_present_ts %>%
+    data.frame() %>%
+    filter(time_index >= "1997-01-01") %>%
+    mutate(ym = yearmonth(time_index)) %>%
+    select(-time_index) %>%
+    group_by(ym) %>%
+    summarise(average = mean(average)) %>%
+    mutate(
+        t = ym - ym[1],
+        index = ym,
+        value = average
+    ) %>%
+    as_tsibble(index = ym)
+
+lm_model <- co2_ts %>% model(lm = TSLM(value ~ index))
+co2_lm_forecast <- forecast(lm_model, h = h_calc)
+
+seasonal_dummies <- model.matrix(~ factor(month) - 1, data = co2_ts)
+colnames(seasonal_dummies) <- month.abb
+co2_ts <- dplyr::bind_cols(co2_ts, seasonal_dummies)
+
+lm_poly_model <- lm(value ~ poly(t, degree = 2, raw = TRUE), data = co2_ts)
+co2_lm_poly_forecast <- predict(lm_poly_model, newdata = data.frame(t = (nrow(co2_ts)+1):(nrow(co2_ts)+2000)))
+
+rbind(
+    accuracy(co2_lm_forecast, )[3:4],
+    accuracy(co2_lm_poly_forecast, co2_monthly_ts %>% mutate(value = average, index = ym))[3:4],
+
+)
 ```
 
 As shown, our forecasts fell short of actuals. The Keeling Curve shows an acceleration in the trend that our models failed to anticipate. It appears the long-term acceleration slowed during the 1990s, which unfortunately lowered our extrapolated estimates considerably.
