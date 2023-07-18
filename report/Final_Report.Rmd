@@ -80,7 +80,7 @@ Data is captured at Mauna Loa for a multitude of reasons. Perhaps most obviously
 
 Co2 data shows several readily apparent patterns. First, daily levels peak at night and are lowest in the afternoons. More important for our purposes, there is clear seasonal behavior coinciding with the rise and fall of plant life on a macroscopic scale, with atmospheric averages peaking in May and bottoming out in September, as plants work to remove Co2 via photosynthesis.
 
-```{r gg_season, echo=FALSE}
+```{r gg_season, echo=FALSE, warning=F, fig.align="center"}
 co2_ts %>%
   tsibble::fill_gaps() %>%
   gg_season(value, period = "year") +
@@ -89,8 +89,8 @@ co2_ts %>%
 
 Most notably, though, is the strong increasing trend on the long-term averages, with a rough average increase of 2.5 ppm per year. Additionally, the ACF and PCF plots show some characteristics of an AR(1) model:
 
-```{r full keeling curve plot, echo=FALSE}
-tsibble::as_tsibble(co2) %>%
+```{r full keeling curve plot, echo=FALSE, warning=F, fig.align="center"}
+co2_plot <- tsibble::as_tsibble(co2) %>%
     ggplot() + 
     aes(x=index, y=value) + 
     geom_line(color = 'steelblue') +
@@ -102,20 +102,23 @@ tsibble::as_tsibble(co2) %>%
     )
 ```
 
-```{r 1997 acf, echo=FALSE}
-tsibble::as_tsibble(co2) %>%
+```{r 1997 acf, echo=FALSE, fig.align="center"}
+co2_acf <- tsibble::as_tsibble(co2) %>%
     pull(value) %>%
     ggAcf() +
         labs(title = TeX(r'($CO_2$ ACF)'))
 ```
 
-```{r 1997 pacf, echo=FALSE}
-tsibble::as_tsibble(co2) %>%
+```{r 1997 pacf, echo=FALSE, fig.align="center"}
+co2_pacf <- tsibble::as_tsibble(co2) %>%
     pull(value) %>%
     ggPacf() +
         labs(title = TeX(r'($CO_2$ PACF)'))
 ```
 
+```{r 1997 plots, echo=FALSE, fig.align="center", warning=F}
+co2_plot + (co2_acf / co2_pacf)
+```
 
 # 1997 Models
 
@@ -172,7 +175,7 @@ LinearModels(co2_ts, 'index', 'value')
 
 Finally, we fit an ARIMA model to the data, following the Box-Jenkins methodology. The Augmented Dickey-Fuller test failed to reject the null hypothesis, indicating stationarity. We proceeded to select our ARIMA model by minimizing BIC over reasonable parameters, and fit the following model:
 
-```{r 1997 arima}
+```{r 1997 arima, echo=F, warning=F}
 co2_model <- co2_ts %>% model(ARIMA(value ~ 1 + pdq(0:15,0:2,0:15) + 
                                       PDQ(0:10,0:2,0:10), ic="bic", stepwise=F, greedy=F))
 co2_model %>% report()
@@ -182,14 +185,6 @@ This matches our intuition from the EDA; the PCF has one significant lag term, i
 
 
 # 1997 Forecasts
-
-We produced forecast ranges for January 2022 each of the four models derived:
-
-```{r forecast ranges}
-# <forecast table for each model, with lower 95, mean, upper 95>
-co2_2022_forecast <- co2_model %>% forecast(h="24 years")
-
-```
 
 Taking the ARIMA model, we also provide some estimates for when CO2 will cross several high thresholds. We've provided a lower bound, indicating the year and month when our forecast confidence interval first contains the threshold, an upper bound, indicating the last time our forecast interval contains the threshold, as well as our mean estimate:
 
@@ -207,35 +202,28 @@ fc_hilo <- fc_hilo %>%
     rename(upper_95 = `95%_upper`) %>%
     rename(lower_95 = `95%_lower`)
 
-# 420 ppm 
+# 420 ppm
 first_420_upper <- fc_hilo %>% filter(upper_95 > 420)
 
 last_420_lower <- fc_hilo %>% filter(lower_95 > 420)
 
-first_420_mean <- min(co2_forecast$index[co2_model$.mean >= 420])
+first_420_mean <- min(co2_forecast$index[co2_forecast$.mean >= 420])
 
 # 500 ppm
-first_500_upper <- fc_hilo %>% filter(upper_95 > 500)
+first_500_upper <- fc_hilo %>% filter(upper_95 > 500) # nothing found > 500
+last_500_lower <- fc_hilo %>% filter(lower_95 > 500) # nothing found > 500
 
-last_500_lower <- fc_hilo %>% filter(lower_95 > 500)
-
-first_500_mean <- min(co2_forecast$index[co2_model$.mean >= 500])
+first_500_mean <- min(co2_forecast$index[co2_forecast$.mean >= 500])
 ```
 
-```{r threshold estimates}
-print("First 420 lower bound")
-print(last_420_lower$index[1])
-print("First 420 upper bound")
-print(first_420_upper$index[1])
-print("First 420 point estimate")
-print(first_420_mean)
-
-print("First 500 lower bound")
-print(last_500_lower$index[1])
-print("First 500 upper bound")
-print(first_500_upper$index[1])
-print("First 500 point estimate")
-print(first_500_mean)
+```{r threshold estimates, echo=F}
+data.frame(
+    Threshold = c(420, 500),
+    `Lower Bound` = c(as.character(last_420_lower$index[1]), "-"),
+    `Upper Bound` = c(as.character(first_420_upper$index[1]), "-"),
+    `Point Estimate` = c(first_420_mean, first_500_mean)
+) %>%
+    kable()
 ```
 
 
@@ -245,8 +233,8 @@ Back in 1997, we made modeling decisions and predictions about atmospheric CO2 l
 
 The Keeling Curve has many similar aspects to our 1997 models, but there is a notable acceleration in the trend that was not fully anticipated. Still, we see strong indications from the ACF and PCF plots of an AR(1) model, with annual seasonal effects.
 
-```{r 2023 curve, echo=F}
-co2_present_ts %>%
+```{r 2023 curve, echo=F, warning=F}
+co2_present_plot <- co2_present_ts %>%
     ggplot(aes(x = time_index, y = average)) +
     geom_line() +
     labs(
@@ -256,26 +244,29 @@ co2_present_ts %>%
     )
 ```
 
-```{r 2023 acf, echo=F}
-co2_present_ts %>%
+```{r 2023 acf, echo=F, warning=F}
+co2_present_acf <- co2_present_ts %>%
     pull(average) %>%
     ggAcf() +
         labs(title = TeX(r'(2023 $CO_2$ ACF)'))
 ```
 
-```{r 2023 pacf, echo=F}
-co2_present_ts %>%
+```{r 2023 pacf, echo=F, warning=F}
+co2_present_pacf <- co2_present_ts %>%
     pull(average) %>%
     ggPacf() +
         labs(title = TeX(r'(2023 $CO_2$ PACF)'))
 ```
 
+```{r 2023 plots, echo=F, warning=F, fig.align='center'}
+co2_present_plot / (co2_present_acf + co2_present_pacf)
+```
 
 # Evaluation 1997 Forecasts
 
 In 1997, we made predictions about what the CO2 levels would be in January 2020. Below is a summary of those predictions, compared with the actuals measured at Mauna Loa:
 
-```{r comparison plot, echo=F}
+```{r comparison plot, echo=F, warning=F, fig.align='center'}
 co2_forecast %>%
     autoplot() +
     geom_line(aes(y = co2_present_ts$average, x = co2_present_ts$time_index), color = "red") +
@@ -287,7 +278,7 @@ co2_forecast %>%
     )
 ```
 
-```{r forecast table, ech=F}
+```{r forecast table, echo=F, warning=F, fig.align='center'}
 # <Table of forecasts and their errors for all 1997 models. Should be copy paste with a few extra columns from the 1997 section>
 co2_monthly_ts <- co2_present_ts %>%
     data.frame() %>%
@@ -312,6 +303,8 @@ new_data$month <- month(new_data$index)
 lm_poly_model <- lm(value ~ poly(t, degree = 2, raw = TRUE) + factor(month), data = co2_ts)
 co2_lm_poly_forecast <- predict(lm_poly_model, newdata = new_data %>% select(t, month))
 
+co2_2022_forecast <- co2_model %>% forecast(h="24 years")
+
 rbind(
     accuracy(co2_lm_forecast, co2_monthly_ts)[4:5],
     data.frame(
@@ -319,16 +312,22 @@ rbind(
         MAE = MAE(co2_lm_poly_forecast, co2_monthly_ts$value)
     ),
     accuracy(co2_2022_forecast, co2_monthly_ts)[4:5]
-) %>% kable()
+) %>%
+    round(2) %>%
+    mutate(model = c("Linear Model", "Polynomial", "ARIMA")) %>%
+    select(model, RMSE, MAE) %>%
+    kable()
 ```
 
 As shown, our forecasts fell short of actuals. The Keeling Curve shows an acceleration in the trend that our models failed to anticipate. It appears the long-term acceleration slowed during the 1990s, which unfortunately lowered our extrapolated estimates considerably.
 
-Additionally, we made forecasts about when atmospheric CO2 levels would cross 420 ppm, which we now know first occurred in <enter real value>. The bottom of our confidence interval occurred in April 2029, meaning we hit this high level of CO2 about a decade ahead of schedule.
+Additionally, we made forecasts about when atmospheric CO2 levels would cross 420 ppm, which we now know first occurred in `r last_420_lower$index[1]`. The bottom of our confidence interval occurred in April 2029, meaning we hit this high level of CO2 about a decade ahead of schedule.
 
 # Updating the models
 
-```{r sa arima}
+We adjusted the weekly NOAA data by splitting them into seasonally-adjusted (SA) and non-seasonally-adjusted (NSA) series of training and testing sets. The sets were split using the last two years of observation. The SA data was then decomposed into its seasonal components, and the ARIMA model was fit to the seasonally-adjusted data. The NSA model was a fitted ARIMA model with the test data. A final polynomial was fit too for a comparison, resulting in the following accuracy:
+
+```{r sa arima, echo=F, warning=F}
 split_date <- max(co2_present_ts$time_index) - lubridate::years(2)
 train_data <- co2_present_ts %>% filter(time_index <= split_date)
 test_data <- co2_present_ts %>% filter(time_index > split_date)
@@ -350,29 +349,99 @@ sa_model <- train_data_season %>%
 sa_forecast <- sa_model %>%
   forecast(h = "2 years")
 
-sa_train_accuracy <- sa_forecast %>% accuracy(co2_present_ts)
+co2_present_decomp <- co2_present_ts %>% model(STL(average ~ season(window = 52)))
+co2_present_season <- co2_present_ts %>% mutate(season_adjust = components(co2_present_decomp)$season_adjust)
+sa_accuracy <- accuracy(sa_forecast, co2_present_season)[4:5]
+
+co2_test_decomp <- test_data %>% model(STL(average ~ season(window = 52)))
+test_data_season <- test_data %>% mutate(season_adjust = components(co2_test_decomp)$season_adjust)
+sa_plot <- sa_forecast %>%
+    autoplot(test_data_season) +
+    labs(
+        title = "[season] Forecast of CO2 Levels (SA)",
+        x = "Year",
+        y = "CO2 Levels (ppm)"
+    )
 ```
 
-```{r nsa arima}
+```{r nsa arima, echo=F, warning=F}
 nsa_model <- train_data %>%
   model(ARIMA(average ~ 1 + pdq(0:5,0:2,0:5) + PDQ(0:5,0:2,0:5, "52 weeks"), ic="aic", stepwise=F, greedy=F))
 
 nsa_forecast <- nsa_model %>%
   forecast(h = "2 years")
 
-nsa_accuracy <- nsa_forecast %>% accuracy(co2_present_ts)
+nsa_accuracy <- accuracy(nsa_forecast, co2_present_ts)[4:5]
+
+nsa_plot <- nsa_forecast %>%
+    autoplot(test_data) +
+    labs(
+        title = "Forecast of CO2 Levels (NSA)",
+        x = "Year",
+        y = "CO2 Levels (ppm)"
+    )
 ```
 
-```{r sa polynomial}
-co2_sa_poly <- lm(average ~ poly(time_index, degree = 2, raw = TRUE), data = test_data)
+```{r sa polynomial, echo=F, warning=F}
+co2_sa_poly <- lm(average ~ poly(time_index, degree = 2, raw = TRUE) + factor(month), data = test_data)
+co2_sa_poly_forecast <- predict(co2_sa_poly, newdata = test_data %>% select(time_index, month))
+
+sa_poly_accuracy <- data.frame(
+    RMSE = RMSE(co2_sa_poly_forecast, test_data$average),
+    MAE = MAE(co2_sa_poly_forecast, test_data$average)
+)
+
+sa_poly_plot <- test_data %>%
+    ggplot(aes(x = time_index, y = average)) +
+    geom_line() +
+    geom_line(aes(y = co2_sa_poly_forecast), color = "red") +
+    labs(
+        title = "Forecast of CO2 Levels (Polynomial)",
+        x = "Year",
+        y = "CO2 Levels (ppm)"
+    )
 ```
 
+```{r nsa sa poly accuracy, echo=F, warning=F, fig.align='center'}
+rbind(
+    sa_accuracy,
+    nsa_accuracy,
+    sa_poly_accuracy
+) %>%
+    round(2) %>%
+    mutate(model = c("SA", "NSA", "Polynomial")) %>%
+    select(model, RMSE, MAE) %>%
+    kable()
+
+(sa_plot / nsa_plot / sa_poly_plot)
+```
+
+The poly model predicted the two years very well compared to the NSA and SA models. The SA model has a very large confidence interval but captures all the points within it. NSA had a very close prediction to the actual with a tight confidence interval. In terms of RMSE and MAE, the NSA model has the lowest MAE of `r round(nsa_accuracy[2],2)`, while SA has the lowest RMSE of `r round(sa_accuracy[1])`. Since NSA fits to the data so well and has a low MAE as well as a very close to low RMSE to SA's RMSE, we will use the NSA model to forecast the next 150 years of CO2 levels.
 
 # Conclusion
 
-Using our NSA forecast, we generated predictions 7800 weeks out (150 years) so that 2122 would be included in the prediction. We saw that for the 420ppm prediction, it crossed for the first time at 
+```{r NSA forecast, echo=F, warning=F}
+longForecast <- nsa_model %>% forecast(h = 7800)
+# Find the first points where forecast crosses 420 and 500
+crosses_420_index <- which(longForecast$.mean > 420)[1]
+crosses_500_index <- which(longForecast$.mean > 500)[1]
+crosses_last_420_index <- which(longForecast$.mean < 420)
+crosses_last_420_index <- crosses_last_420_index[length(crosses_last_420_index)]
+crosses_last_500_index <- which(longForecast$.mean < 500)
+crosses_last_500_index <- crosses_last_500_index[length(crosses_last_500_index)]
+# Get the corresponding times
+crosses_420_time <- longForecast$time_index[crosses_420_index]
+crosses_500_time <- longForecast$time_index[crosses_500_index]
+crosses_last_420_time <- longForecast$time_index[crosses_last_420_index]
+crosses_last_500_time <- longForecast$time_index[crosses_last_500_index]
 
-> [ fill this in ]
+forecast_2122 <- subset(longForecast, year(time_index) == 2122)
+# Calculate the average of the 'average.y' column for the year 2021
+average_2122 <- mean(forecast_2122$average)
+```
+
+Using our NSA forecast, we generated predictions 7800 weeks out (150 years) so that 2122 would be included in the prediction. We predict that the atmospheric CO2 levels will reach 420 ppm as early as `r crosses_420_time`, and as late as `r crosses_last_420_time`. Additionally, We believe that the atmospheric CO2 levels will reach 500 ppm as early as `r crosses_500_time`, and as late as `r crosses_last_500_time`. By 2122, we predict that the atmospheric CO2 levels will reach `r round(mean(average_2122), 2)`. We are 95% confident that these predictions will be accurate.
+
 
 
 
