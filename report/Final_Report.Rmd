@@ -1,0 +1,160 @@
+---
+title: "W271 Group Lab 2"
+subtitle: "The Keeling Curve"
+author: "Adam Kreitzman, Hailee Schuele, Lee Perkins, Paul Cooper"
+output: bookdown::pdf_document2
+fontsize: 11pt
+geometry: margin=1in
+---
+
+
+```{r load packages, echo = FALSE, message = FALSE}
+```
+
+
+```{r load data, echo = FALSE, message = FALSE}
+
+```
+
+
+# Introduction
+
+Beginning in 1958, regular measurements of atmospheric CO2 levels have been taken at the Mauna Loa Observatory in Hawaii, under the guidance of scientist Charles David Keeling. Many interesting conclusions have been drawn about the Co2 data, including noting daily and annual peaks and valleys, coinciding with the respiration cycles of vegetation. Most alarmingly, the readings from Mauna Loa showed a consistent upward trend, starting around 315 parts per million (ppm) in the ‘50s and rising to around 370 ppm by the current year, 1997.
+
+The graph displaying both the cyclical nature and upward trajectory of atmospheric Co2 concentrations has come to be known as the Keeling Curve, and it is one of the hallmark findings in understanding man-made impacts on climate change. In this report, we seek to better understand how successful historical models of the Keeling Curve have been, and generate up-to-date projections of future Co2 concentrations, so that we can better understand any past modeling shortcomings, and better evaluate the impacts of ongoing carbon-emission reduction efforts going forward.
+
+
+# Data and Measurement
+
+Data is captured at Mauna Loa for a multitude of reasons. Perhaps most obviously, it has the longest history of CO2 measurement of any currently operating site. Additionally, Mauna Loa has the advantage of being very isolated from most of the world’s vegetation, and at a high altitude, meaning measurements mostly eliminate the effect of local plant and human activities. Data from Mauna Loa has been compared to data from many other locations, including Antarctica, Washington DC, and Switzerland, and while locality plays an undeniable role in short term measurements, the long-term patterns and trends are corroborated by other measurements.
+
+Co2 data shows several readily apparent patterns. First, daily levels peak at night and are lowest in the afternoons. More important for our purposes, there is clear seasonal behavior coinciding with the rise and fall of plant life on a macroscopic scale, with atmospheric averages peaking in May and bottoming out in September, as plants work to remove Co2 via photosynthesis.
+
+```{r gg_season}
+
+```
+
+Most notably, though, is the strong increasing trend on the long-term averages, with a rough average increase of 2.5 ppm per year. Additionally, the ACF and PCF plots show some characteristics of an AR(1) model:
+
+```{r full keeling curve plot}
+
+```
+
+```{r 1997 acf}
+
+```
+
+```{r 1997 pacf}
+
+```
+
+
+# 1997 Models
+
+With the Mauna Loa data at hand, we attempt a series of modeling techniques, starting with the simplest and building to the most robust. Before beginning modeling, we considered taking a log transform of the data, but that is not appropriate given the data; we do not visually observe accelerating growth in either the trend or the cyclic patterns. Models using the log transform of the Co2 values were not improvements, and will not be used in the remainder of the report. 
+
+Fitting linear and quadratic models to the overall dataset does a reasonable job of picking up the long-term trends of the data, but doesn’t capture the seasonal aspects appropriately. A stronger model is obtained by using a polynomial model with dummy variables for month included, to capture the annual seasonal effects:
+
+```{r 1997 model plots}
+# <linear & quadratic & poly model plots>
+```
+
+Finally, we fit an ARIMA model to the data, following the Box-Jenkins methodology. The Augmented Dickey-Fuller test failed to reject the null hypothesis, indicating stationarity. We proceeded to select our ARIMA model by minimizing BIC over reasonable parameters, and fit the following model:
+
+```{r 1997 arima}
+# <Either nicely formatted text of the ARIMA(1,0,1)(4,1,0)[12], or the output of the model %>% report>
+```
+
+This matches our intuition from the EDA; the PCF has one significant lag term, indicating an AR(1) pattern, and the seasonal pattern is well modeled with the 12 month lag.
+
+
+# 1997 Forecasts
+
+We produced forecast ranges for January 2022 each of the four models derived:
+
+```{r forecast ranges}
+# <forecast table for each model, with lower 95, mean, upper 95>
+```
+
+Taking the ARIMA model, we also provide some estimates for when CO2 will cross several high thresholds. We’ve provided a lower bound, indicating the year and month when our forecast confidence interval first contains the threshold, an upper bound, indicating the last time our forecast interval contains the threshold, as well as our mean estimate:
+
+```{r forecast estimates}
+# <forecasts for 420/500 ppm>
+```
+
+
+# 2023 - Revisiting and Revising
+
+Back in 1997, we made modeling decisions and predictions about atmospheric CO2 levels, based on data collected from the Muana Loa observatory. 26 years later, we revisit those projections and compare them to the actual data collected in the interim. Our goal is to evaluate our modeling techniques from before, and provide updated estimates based on the data now available. Data for this report is sourced from the United States’ Nation Oceanic and Atmospheric Administration (NOAA).
+
+The Keeling Curve has many similar aspects to our 1997 models, but there is a notable acceleration in the trend that was not fully anticipated. Still, we see strong indications from the ACF and PCF plots of an AR(1) model, with annual seasonal effects.
+
+```{r 2023 curve}
+
+```
+
+```{r 2023 acf}
+
+```
+
+```{r 2023 pacf}
+
+```
+
+
+# Evaluation 1997 Forecasts
+
+In 1997, we made predictions about what the CO2 levels would be in January 2020. Below is a summary of those predictions, compared with the actuals measured at Mauna Loa:
+
+```{r comparison plot}
+# <That awesome plot of actuals vs our ARIMA prediction, with a subtitle>
+```
+
+```{r forecast table}
+# <Table of forecasts and their errors for all 1997 models. Should be copy paste with a few extra columns from the 1997 section>
+```
+
+As shown, our forecasts fell short of actuals. The Keeling Curve shows an acceleration in the trend that our models failed to anticipate. It appears the long-term acceleration slowed during the 1990s, which unfortunately lowered our extrapolated estimates considerably.
+
+Additionally, we made forecasts about when atmospheric CO2 levels would cross 420 ppm, which we now know first occurred in <enter real value>. The bottom of our confidence interval occurred in April 2029, meaning we hit this high level of CO2 about a decade ahead of schedule.
+
+# Updating the models
+
+```{r sa arima}
+
+```
+
+```{r nsa arima}
+
+```
+
+```{r sa polynomial}
+
+```
+
+
+# Conclusion
+
+Using our NSA forecast, we generated predictions 7800 weeks out (150 years) so that 2122 would be included in the prediction. We saw that for the 420ppm prediction, it crossed for the first time at 
+
+> [ fill this in ]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
