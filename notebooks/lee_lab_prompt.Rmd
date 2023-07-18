@@ -615,6 +615,11 @@ average_2122 <- mean(forecast_2122$average)
 forecast_2122$average
 # Print the average value
 mean(average_2122)
+
+
+
+first_420_mean <- min(co2_forecast$time_index[co2_model$.mean >= 420])
+co2_forecast
 ```
 
 ```{r}
@@ -638,7 +643,6 @@ first_500_upper$time_index[1]
 
 last_500_lower <- fc_hilo %>% filter(lower_95 > 500)
 last_500_lower$time_index[1]
-
 # confidence interval
 conf_int <- last_500_lower %>% select(lower_95, upper_95)
 conf_int
