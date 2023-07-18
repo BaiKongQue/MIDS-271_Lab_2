@@ -69,19 +69,22 @@ co2_ts <- co2 %>%
 
 # Introduction
 
-Beginning in 1958, regular measurements of atmospheric CO2 levels have been taken at the Mauna Loa Observatory in Hawaii, under the guidance of scientist Charles David Keeling. Many interesting conclusions have been drawn about the Co2 data, including noting daily and annual peaks and valleys, coinciding with the respiration cycles of vegetation. Most alarmingly, the readings from Mauna Loa showed a consistent upward trend, starting around 315 parts per million (ppm) in the ‘50s and rising to around 370 ppm by the current year, 1997.
+Beginning in 1958, regular measurements of atmospheric CO2 levels have been taken at the Mauna Loa Observatory in Hawaii, under the guidance of scientist Charles David Keeling. Many interesting conclusions have been drawn about the Co2 data, including noting daily and annual peaks and valleys, coinciding with the respiration cycles of vegetation. Most alarmingly, the readings from Mauna Loa showed a consistent upward trend, starting around 315 parts per million (ppm) in the '50s and rising to around 370 ppm by the current year, 1997.
 
 The graph displaying both the cyclical nature and upward trajectory of atmospheric Co2 concentrations has come to be known as the Keeling Curve, and it is one of the hallmark findings in understanding man-made impacts on climate change. In this report, we seek to better understand how successful historical models of the Keeling Curve have been, and generate up-to-date projections of future Co2 concentrations, so that we can better understand any past modeling shortcomings, and better evaluate the impacts of ongoing carbon-emission reduction efforts going forward.
 
 
 # Data and Measurement
 
-Data is captured at Mauna Loa for a multitude of reasons. Perhaps most obviously, it has the longest history of CO2 measurement of any currently operating site. Additionally, Mauna Loa has the advantage of being very isolated from most of the world’s vegetation, and at a high altitude, meaning measurements mostly eliminate the effect of local plant and human activities. Data from Mauna Loa has been compared to data from many other locations, including Antarctica, Washington DC, and Switzerland, and while locality plays an undeniable role in short term measurements, the long-term patterns and trends are corroborated by other measurements.
+Data is captured at Mauna Loa for a multitude of reasons. Perhaps most obviously, it has the longest history of CO2 measurement of any currently operating site. Additionally, Mauna Loa has the advantage of being very isolated from most of the world's vegetation, and at a high altitude, meaning measurements mostly eliminate the effect of local plant and human activities. Data from Mauna Loa has been compared to data from many other locations, including Antarctica, Washington DC, and Switzerland, and while locality plays an undeniable role in short term measurements, the long-term patterns and trends are corroborated by other measurements.
 
 Co2 data shows several readily apparent patterns. First, daily levels peak at night and are lowest in the afternoons. More important for our purposes, there is clear seasonal behavior coinciding with the rise and fall of plant life on a macroscopic scale, with atmospheric averages peaking in May and bottoming out in September, as plants work to remove Co2 via photosynthesis.
 
 ```{r gg_season}
-
+co2_ts %>%
+  tsibble::fill_gaps() %>%
+  gg_season(value, period = "year") +
+  labs(title = "Annual Seasonal Plot")
 ```
 
 Most notably, though, is the strong increasing trend on the long-term averages, with a rough average increase of 2.5 ppm per year. Additionally, the ACF and PCF plots show some characteristics of an AR(1) model:
@@ -118,7 +121,7 @@ tsibble::as_tsibble(co2) %>%
 
 With the Mauna Loa data at hand, we attempt a series of modeling techniques, starting with the simplest and building to the most robust. Before beginning modeling, we considered taking a log transform of the data, but that is not appropriate given the data; we do not visually observe accelerating growth in either the trend or the cyclic patterns. Models using the log transform of the Co2 values were not improvements, and will not be used in the remainder of the report. 
 
-Fitting linear and quadratic models to the overall dataset does a reasonable job of picking up the long-term trends of the data, but doesn’t capture the seasonal aspects appropriately. A stronger model is obtained by using a polynomial model with dummy variables for month included, to capture the annual seasonal effects:
+Fitting linear and quadratic models to the overall dataset does a reasonable job of picking up the long-term trends of the data, but doesn't capture the seasonal aspects appropriately. A stronger model is obtained by using a polynomial model with dummy variables for month included, to capture the annual seasonal effects:
 
 ```{r 1997 model plots, echo=F, warning=F, fig.align='center'}
 # <linear & quadratic & poly model plots>
@@ -189,7 +192,7 @@ co2_2022_forecast <- co2_model %>% forecast(h="24 years")
 
 ```
 
-Taking the ARIMA model, we also provide some estimates for when CO2 will cross several high thresholds. We’ve provided a lower bound, indicating the year and month when our forecast confidence interval first contains the threshold, an upper bound, indicating the last time our forecast interval contains the threshold, as well as our mean estimate:
+Taking the ARIMA model, we also provide some estimates for when CO2 will cross several high thresholds. We've provided a lower bound, indicating the year and month when our forecast confidence interval first contains the threshold, an upper bound, indicating the last time our forecast interval contains the threshold, as well as our mean estimate:
 
 ```{r forecast estimates}
 # <forecasts for 420/500 ppm>
@@ -222,7 +225,7 @@ last_500_lower <- fc_hilo %>% filter(lower_95 > 500)
 
 # 2023 - Revisiting and Revising
 
-Back in 1997, we made modeling decisions and predictions about atmospheric CO2 levels, based on data collected from the Muana Loa observatory. 26 years later, we revisit those projections and compare them to the actual data collected in the interim. Our goal is to evaluate our modeling techniques from before, and provide updated estimates based on the data now available. Data for this report is sourced from the United States’ Nation Oceanic and Atmospheric Administration (NOAA).
+Back in 1997, we made modeling decisions and predictions about atmospheric CO2 levels, based on data collected from the Muana Loa observatory. 26 years later, we revisit those projections and compare them to the actual data collected in the interim. Our goal is to evaluate our modeling techniques from before, and provide updated estimates based on the data now available. Data for this report is sourced from the United States' Nation Oceanic and Atmospheric Administration (NOAA).
 
 The Keeling Curve has many similar aspects to our 1997 models, but there is a notable acceleration in the trend that was not fully anticipated. Still, we see strong indications from the ACF and PCF plots of an AR(1) model, with annual seasonal effects.
 
@@ -288,18 +291,20 @@ co2_monthly_ts <- co2_present_ts %>%
 lm_model <- co2_ts %>% model(lm = TSLM(value ~ index))
 co2_lm_forecast <- forecast(lm_model, h = h_calc)
 
-seasonal_dummies <- model.matrix(~ factor(month) - 1, data = co2_ts)
-colnames(seasonal_dummies) <- month.abb
-co2_ts <- dplyr::bind_cols(co2_ts, seasonal_dummies)
-
-lm_poly_model <- lm(value ~ poly(t, degree = 2, raw = TRUE), data = co2_ts)
-co2_lm_poly_forecast <- predict(lm_poly_model, newdata = data.frame(t = (nrow(co2_ts)+1):(nrow(co2_ts)+2000)))
+new_data <- data.frame(index = seq.Date(as.Date('1997-01-01'), as.Date('2024-01-01'), by = 'month'))
+new_data$t <- ((co2_ts$t[nrow(co2_ts)]+1):(co2_ts$t[nrow(co2_ts)] + nrow(new_data)))
+new_data$month <- month(new_data$index)
+lm_poly_model <- lm(value ~ poly(t, degree = 2, raw = TRUE) + factor(month), data = co2_ts)
+co2_lm_poly_forecast <- predict(lm_poly_model, newdata = new_data %>% select(t, month))
 
 rbind(
-    accuracy(co2_lm_forecast, )[3:4],
-    accuracy(co2_lm_poly_forecast, co2_monthly_ts %>% mutate(value = average, index = ym))[3:4],
-
-)
+    accuracy(co2_lm_forecast, co2_monthly_ts)[4:5],
+    data.frame(
+        RMSE = RMSE(co2_lm_poly_forecast, co2_monthly_ts$value),
+        MAE = MAE(co2_lm_poly_forecast, co2_monthly_ts$value)
+    ),
+    accuracy(co2_2022_forecast, co2_monthly_ts)[4:5]
+) %>% kable()
 ```
 
 As shown, our forecasts fell short of actuals. The Keeling Curve shows an acceleration in the trend that our models failed to anticipate. It appears the long-term acceleration slowed during the 1990s, which unfortunately lowered our extrapolated estimates considerably.
@@ -309,15 +314,42 @@ Additionally, we made forecasts about when atmospheric CO2 levels would cross 42
 # Updating the models
 
 ```{r sa arima}
+split_date <- max(co2_present_ts$time_index) - lubridate::years(2)
+train_data <- co2_present_ts %>% filter(time_index <= split_date)
+test_data <- co2_present_ts %>% filter(time_index > split_date)
 
+# Decompose the time series
+co2_decomposition <- train_data %>% model(STL(average ~ season(window = 52)))
+
+# Extract components
+components <- co2_decomposition %>% components()
+
+# Add the seasonal component to the original tsibble
+train_data_season <- train_data %>% mutate(season_adjust = components$season_adjust)
+
+# Fit the ARIMA model to the seasonally adjusted data
+sa_model <- train_data_season %>%
+  model(ARIMA(season_adjust ~ 1 + pdq(0:10,0:3,0:10) + PDQ(0:10,0:3,0:10, 52), ic="aic", stepwise=F, greedy=F))
+
+# Forecast the next 'n' periods for the SA model
+sa_forecast <- sa_model %>%
+  forecast(h = "2 years")
+
+sa_train_accuracy <- sa_forecast %>% accuracy(co2_present_ts)
 ```
 
 ```{r nsa arima}
+nsa_model <- train_data %>%
+  model(ARIMA(average ~ 1 + pdq(0:5,0:2,0:5) + PDQ(0:5,0:2,0:5, "52 weeks"), ic="aic", stepwise=F, greedy=F))
 
+nsa_forecast <- nsa_model %>%
+  forecast(h = "2 years")
+
+nsa_accuracy <- nsa_forecast %>% accuracy(co2_present_ts)
 ```
 
 ```{r sa polynomial}
-
+co2_sa_poly <- lm(average ~ poly(time_index, degree = 2, raw = TRUE), data = test_data)
 ```
 
 
