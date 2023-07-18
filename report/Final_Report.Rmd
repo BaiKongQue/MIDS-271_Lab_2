@@ -9,11 +9,61 @@ geometry: margin=1in
 
 
 ```{r load packages, echo = FALSE, message = FALSE}
+library(tidyverse)
+library(tsibble)
+library(latex2exp)
+
+library(lubridate)
+library(forecast)
+library(feasts)
+library(patchwork)
+library(knitr)
+library(fable)
+
+theme_set(theme_minimal())
+knitr::opts_chunk$set(dpi=1000)
 ```
 
 
 ```{r load data, echo = FALSE, message = FALSE}
+AverageFillNegatives <- function(data) {
+    ndata <- data
+    # loop through each row and fill in values < 0 with average of previous and next value
+    for (i in 2:nrow(ndata)) {
+        if (ndata$average[i] < 0) {
+            # loop until the current negative is filled with an average
+            while(ndata$average[i] < 0) {
+                j <- i
+                # find next non-negative value
+                while (ndata$average[j] < 0) {
+                    j <- j + 1
+                }
+                # add average to the index between i-1 and j
+                ndata$average[(i - 1) + round((j-(i-1))/2)] <-
+                    (ndata$average[i-1] + ndata$average[j]) / 2
+            }
+        }
+    }
+    return(ndata)
+}
 
+co2_present <- read.csv("https://gml.noaa.gov/webdata/ccgg/trends/co2/co2_weekly_mlo.csv", comment.char = "#") %>%
+    mutate(
+        time_index = ymd(paste(year, month, day, sep = "-")),
+        t = as.numeric(difftime(time_index, time_index[1], units = "weeks"))
+    )
+
+co2_present_ts <- co2_present %>%
+    AverageFillNegatives() %>%
+    mutate(average_diff = average - lag(average)) %>%
+    as_tsibble(index = time_index)
+
+co2_ts <- co2 %>%
+    as_tsibble() %>%
+    mutate(
+        t = index - index[1],
+        month = month(index),
+    )
 ```
 
 
@@ -37,15 +87,30 @@ Co2 data shows several readily apparent patterns. First, daily levels peak at ni
 Most notably, though, is the strong increasing trend on the long-term averages, with a rough average increase of 2.5 ppm per year. Additionally, the ACF and PCF plots show some characteristics of an AR(1) model:
 
 ```{r full keeling curve plot}
-
+tsibble::as_tsibble(co2) %>%
+    ggplot() + 
+    aes(x=index, y=value) + 
+    geom_line(color = 'steelblue') +
+    labs(
+        title = TeX(r'(Monthly Mean $CO_2$)'),
+        subtitle = 'The "Keeling Curve"',
+        x = 'Month and Year',
+        y = TeX(r'($CO_2$ parts per million)')
+    )
 ```
 
 ```{r 1997 acf}
-
+tsibble::as_tsibble(co2) %>%
+    pull(value) %>%
+    ggAcf() +
+        labs(title = TeX(r'($CO_2$ ACF)'))
 ```
 
 ```{r 1997 pacf}
-
+tsibble::as_tsibble(co2) %>%
+    pull(value) %>%
+    ggPacf() +
+        labs(title = TeX(r'($CO_2$ PACF)'))
 ```
 
 
@@ -55,14 +120,60 @@ With the Mauna Loa data at hand, we attempt a series of modeling techniques, sta
 
 Fitting linear and quadratic models to the overall dataset does a reasonable job of picking up the long-term trends of the data, but doesn’t capture the seasonal aspects appropriately. A stronger model is obtained by using a polynomial model with dummy variables for month included, to capture the annual seasonal effects:
 
-```{r 1997 model plots}
+```{r 1997 model plots, echo=F, warning=F, fig.align='center'}
 # <linear & quadratic & poly model plots>
+LinearModels <- function(data, x, y) {
+    # Linear time trend model
+    co2_lm <- lm(as.formula(paste(y, "~ t")), data = data)
+    co2_lm_quad <- lm(as.formula(paste(y, "~ t + I(t^2)")), data = data)
+    co2_lm_poly <- lm(as.formula(paste(y, "~ poly(t, degree = 2, raw = TRUE)")), data = data)
+
+    # plot with lm line
+    co2_lm_plot <- data %>%
+        ggplot(aes(x = !!sym(x), y = !!sym(y))) +
+        geom_line(color = 'steelblue') +
+        geom_line(aes(y = predict(co2_lm, data)), color = 'red') +
+        labs(
+            title = TeX(r'(Monthly Mean $CO_2$ fitted with linear trend)'),
+            x = 'Month and Year',
+            y = TeX(r'($CO_2$ parts per million)')
+        )
+
+    # plot lm_quad
+    co2_lm_quad_plot <- data %>%
+        ggplot(aes(x = !!sym(x), y = !!sym(y))) +
+        geom_line(color = 'steelblue') +
+        geom_line(aes(y = predict(co2_lm_quad, data)), color = 'red') +
+        labs(
+            title = TeX(r'(Monthly Mean $CO_2$ fitted with quadratic trend)'),
+            x = 'Month and Year',
+            y = TeX(r'($CO_2$ parts per million)')
+        )
+
+    # plot lm_poly
+    co2_lm_poly_plot <- data %>%
+        ggplot(aes(x = !!sym(x), y = !!sym(y))) +
+        geom_line(color = 'steelblue') +
+        geom_line(aes(y = predict(co2_lm_poly, data)), color = 'red') +
+        labs(
+            title = TeX(r'(Monthly Mean $CO_2$ fitted with polynomial trend)'),
+            x = 'Month and Year',
+            y = TeX(r'($CO_2$ parts per million)')
+        )
+
+    return(co2_lm_plot / co2_lm_quad_plot / co2_lm_poly_plot)
+}
+
+LinearModels(co2_ts, 'index', 'value')
 ```
+
 
 Finally, we fit an ARIMA model to the data, following the Box-Jenkins methodology. The Augmented Dickey-Fuller test failed to reject the null hypothesis, indicating stationarity. We proceeded to select our ARIMA model by minimizing BIC over reasonable parameters, and fit the following model:
 
 ```{r 1997 arima}
 # <Either nicely formatted text of the ARIMA(1,0,1)(4,1,0)[12], or the output of the model %>% report>
+co2_model <- co2_ts %>% model(ARIMA(value ~ 1 + pdq(0:15,0:2,0:15) + PDQ(0:10,0:2,0:10), ic="bic", stepwise=F, greedy=F))
+co2_model %>% report()
 ```
 
 This matches our intuition from the EDA; the PCF has one significant lag term, indicating an AR(1) pattern, and the seasonal pattern is well modeled with the 12 month lag.
@@ -74,12 +185,46 @@ We produced forecast ranges for January 2022 each of the four models derived:
 
 ```{r forecast ranges}
 # <forecast table for each model, with lower 95, mean, upper 95>
+co2_2022_forecast <- co2_model %>% forecast(h="24 years")
+
 ```
 
 Taking the ARIMA model, we also provide some estimates for when CO2 will cross several high thresholds. We’ve provided a lower bound, indicating the year and month when our forecast confidence interval first contains the threshold, an upper bound, indicating the last time our forecast interval contains the threshold, as well as our mean estimate:
 
 ```{r forecast estimates}
 # <forecasts for 420/500 ppm>
+h_calc <- (2100 - 1998) * 12 + 1
+# Forecast atmospheric CO2 growth
+co2_forecast <- co2_model %>% forecast(h=h_calc)
+# plot forcast and actual values from co2_ts
+co2_forecast %>%
+    autoplot(co2_ts) +
+    labs(
+        title = TeX(r'(Monthly Mean $CO_2$ forecast)'),
+        x = 'Month and Year',
+        y = TeX(r'($CO_2$ parts per million)')
+    )
+
+fc_hilo <- co2_forecast %>%
+    hilo() %>%
+    unpack_hilo('95%')
+
+fc_hilo <- fc_hilo %>%
+    rename(upper_95 = `95%_upper`) %>%
+    rename(lower_95 = `95%_lower`)
+
+first_420_upper <- fc_hilo %>% filter(upper_95 > 420)
+# first_420_upper$index[1]
+
+last_420_lower <- fc_hilo %>% filter(lower_95 > 420)
+# last_420_lower$index[1]
+
+# 500 ppm
+first_500_upper <- fc_hilo %>% filter(upper_95 > 500)
+# first_500_upper$index[1]
+
+last_500_lower <- fc_hilo %>% filter(lower_95 > 500)
+# last_500_lower$index[1]
 ```
 
 
