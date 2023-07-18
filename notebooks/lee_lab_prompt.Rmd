@@ -163,7 +163,7 @@ LinearModels <- function(data, x, y) {
     # co2_lm_poly %>% gg_tsresiduals()
 }
 
-LinearModels(co2_ts, 'index', 'value')
+models <- LinearModels(co2_ts, 'index', 'value')
 ```
 
 ## (3 points) Task 3a: ARIMA times series model 
@@ -194,6 +194,8 @@ co2_forecast %>%
         y = TeX(r'($CO_2$ parts per million)')
     )
 
+# accuracy(co2_forecast, co2_monthly_ts %>% mutate(value = average, index = ym))
+
 fc_hilo <- co2_forecast %>%
     hilo() %>%
     unpack_hilo('95%')
@@ -218,6 +220,33 @@ last_500_lower$index[1]
 # confidence interval
 conf_int <- fc_hilo %>% filter(index == yearmonth('2100-01-01')) %>% select(lower_95, upper_95)
 conf_int$lower_95
+```
+
+```{r forecast models}
+lm_model <- co2_ts %>% model(lm = TSLM(value ~ index))
+co2_lm_forecast <- forecast(lm_model, h = h_calc)
+
+co2_lm_forecast %>%
+    autoplot() +
+    geom_line(aes(y = co2_ts$value, x = co2_ts$index), color = "red") +
+    labs(
+        title = TeX(r'(Monthly Mean $CO_2$ forecast)'),
+        x = 'Month and Year',
+        y = TeX(r'($CO_2$ parts per million)')
+    )
+```
+```{r forecast models}
+lm_quad_model <- co2_ts %>% model(lm = TSLM(value ~ poly(index, 2)))
+co2_lm_quad_forecast <- forecast(lm_quad_model, h = h_calc)
+
+co2_lm_quad_forecast %>%
+    autoplot() +
+    geom_line(aes(y = co2_ts$value, x = co2_ts$index), color = "red") +
+    labs(
+        title = TeX(r'(Monthly Mean $CO_2$ forecast)'),
+        x = 'Month and Year',
+        y = TeX(r'($CO_2$ parts per million)')
+    )
 ```
 
 # Report from the Point of View of the Present 
@@ -324,7 +353,7 @@ co2_present_model %>% augment() %>% ACF(.resid) %>% autoplot()
 
 In 1997 you made predictions about the first time that CO2 would cross 420 ppm. How close were your models to the truth? 
 
-```{r present vs past forecast atmospheric CO2 growth}
+```{r present vs past forecast atmospheric CO2 growth, echo=F, warning=F, message=F, fig.align='center'}
 # plot forcast and actual values from co2_ts
 co2_forecast[0:480,] %>%
     autoplot() +
@@ -338,7 +367,7 @@ co2_forecast[0:480,] %>%
 
 After reflecting on your performance on this threshold-prediction task, continue to use the weekly data to generate a month-average series from 1997 to the present, and compare the overall forecasting performance of your models from Parts 2a and 3b over the entire period. (You should conduct formal tests for this task.) 
 
-```{r present month-average series}
+```{r present month-average series, echo=F, warning=F, message=F}
 co2_monthly_ts <- co2_present_ts %>%
     data.frame() %>%
     filter(time_index >= "1997-01-01") %>%
@@ -350,14 +379,35 @@ co2_monthly_ts <- co2_present_ts %>%
     as_tsibble(index = ym)
 ```
 
-```{r present month-average forecast linear model test}
-LinearModels(co2_monthly_ts, "ym", "average")
+```{r present month-average forecast linear model test, echo=F, warning=F, message=F, fig.align='center'}
+accuracy(co2_lm_forecast, co2_monthly_ts %>% mutate(value = average, index = ym))[3:4] %>% kable()
+
+co2_lm_forecast %>%
+    autoplot() +
+    geom_line(aes(y = co2_present_ts$average, x = co2_present_ts$time_index), color = "red") +
+    labs(
+        title = TeX(r'(Monthly Mean $CO_2$ forecast)'),
+        x = 'Month and Year',
+        y = TeX(r'($CO_2$ parts per million)')
+    )
+```
+
+```{r present month-average forecast poly model test, echo=F, warning=F, message=F, fig.align='center'}
+accuracy(co2_lm_quad_forecast, co2_monthly_ts %>% mutate(value = average, index = ym))
+
+co2_lm_quad_forecast %>%
+    autoplot() +
+    geom_line(aes(y = co2_present_ts$average, x = co2_present_ts$time_index), color = "red") +
+    labs(
+        title = TeX(r'(Monthly Mean $CO_2$ forecast)'),
+        x = 'Month and Year',
+        y = TeX(r'($CO_2$ parts per million)')
+    )
 ```
 
 ```{r present month-average ARIMA test}
-co2_monthly_arima_model <- co2_monthly_ts %>% model(ARIMA(average ~ 1 + pdq(0:10,0:3,0:10) + PDQ(0:10,0:3,0:10), ic="bic", stepwise=F, greedy=F))
-co2_present_model %>% report()
-co2_present_model %>% augment() %>% ACF(.resid) %>% autoplot()
+forecast <- co2_monthly_arima_model %>% forecast(h = "2 years")
+co2_forecast %>% accuracy(co2_monthly_ts %>% mutate(value = average, index = ym))
 ```
 
 ## (4 points) Task 5b: Train best models on present data
@@ -377,7 +427,7 @@ train_data <- co2_present_ts %>% filter(time_index <= split_date)
 test_data <- co2_present_ts %>% filter(time_index > split_date)
 
 # Decompose the time series
-co2_decomposition <- train_data %>% model(STL(average ~ season(window = 12)))
+co2_decomposition <- train_data %>% model(STL(average ~ season(window = 52)))
 
 # Extract components
 components <- co2_decomposition %>% components()
@@ -388,11 +438,11 @@ train_data_season <- train_data %>% mutate(season_adjust = components$season_adj
 
 # Fit the ARIMA model to the non-seasonally adjusted data
 nsa_model <- train_data %>%
-  model(ARIMA(average ~ pdq(0:10,0:3,0:10) + PDQ(0:10,0:3,0:10)))
+  model(ARIMA(average ~ 1 + pdq(0:10,0:3,0:10) + PDQ(0:10,0:3,0:10), ic="aic", stepwise=F, greedy=F))
 
 # Fit the ARIMA model to the seasonally adjusted data
 sa_model <- train_data_season %>%
-  model(ARIMA(season_adjust ~ pdq(0:10,0:3,0:10) + PDQ(0:10,0:3,0:10)))
+  model(ARIMA(season_adjust ~ 1 + pdq(0:10,0:3,0:10) + PDQ(0:10,0:3,0:10, 52), ic="aic", stepwise=F, greedy=F))
 
 # Forecast the next 'n' periods for the NSA model
 nsa_forecast <- nsa_model %>%
@@ -403,8 +453,9 @@ sa_forecast <- sa_model %>%
   forecast(h = "2 years")
 
 # Compute the training accuracy
-# nsa_train_accuracy <- nsa_model %>% accuracy(train_data)
-# sa_train_accuracy <- sa_model %>% accuracy(train_data)
+nsa_test_accuracy <- nsa_forecast %>% accuracy(test_data)
+nsa_train_accuracy <- nsa_forecast %>% accuracy(co2_present_ts)
+# sa_train_accuracy <- sa_forecast %>% accuracy(test_data)
 # train_data
 ```
 
@@ -418,14 +469,16 @@ nsa_forecast %>%
         y = "CO2 Levels (ppm)"
     )
 
+nsa_model %>% report()
+
 # Plot the training data and the forecast for the SA model
 co2_test_decomp <- test_data %>% model(STL(average ~ season(window = 12)))
 test_data_season <- test_data %>% mutate(season_adjust = components(co2_test_decomp)$season_adjust)
 test_data_avg <- test_data %>% mutate(season_adjust = average)
 sa_forecast %>%
-    autoplot(test_data_avg) + # replace with test_data_season or test_data_avg
+    autoplot(test_data_season) + # replace with test_data_season or test_data_avg
     labs(
-        title = "[average] Forecast of CO2 Levels (SA)",
+        title = "[season] Forecast of CO2 Levels (SA)",
         x = "Year",
         y = "CO2 Levels (ppm)"
     )
@@ -461,3 +514,64 @@ train_data_season %>%
 ## (3 points) Task Part 6b: How bad could it get?
 
 With the non-seasonally adjusted data series, generate predictions for when atmospheric CO2 is expected to be at 420 ppm and 500 ppm levels for the first and final times (consider prediction intervals as well as point estimates in your answer). Generate a prediction for atmospheric CO2 levels in the year 2122. How confident are you that these will be accurate predictions?
+
+```{r how bad could it get?}
+longForecast <- nsa_model %>%
+  forecast(h = 7800)
+
+# Find when CO2 will reach 420 and 500 ppm
+first_420_ppm <- longForecast %>% filter(.mean > 420) 
+first_500_ppm <- longForecast %>% filter(.mean > 500) 
+year_2122 <- longForecast %>% filter(year(.index) == 2122)
+
+first_420_ppm
+first_500_ppm
+
+print(longForecast)
+```
+
+```{r}
+longForecast <- nsa_model %>%
+  forecast(h = 7800)
+
+# Find when CO2 will reach 420 and 500 ppm
+first_420_ppm <- longForecast %>% filter(.mean > 420) 
+first_500_ppm <- longForecast %>% filter(.mean > 500) 
+
+
+first_420_ppm
+first_500_ppm
+
+
+forecast_2122 <- subset(longForecast, year(time_index) == 2122)
+
+# Calculate the average of the 'average.y' column for the year 2021
+average_2122 <- mean(forecast_2122$average)
+
+# Print the average value
+mean(average_2122)
+```
+
+```{r}
+forecast_7800 <- forecast(nsa_model, h=7800)
+forecast_7800 %>% autoplot(co2_present_ts)
+
+na_2100_mean <- forecast_7800$.mean[h_calc]
+jan_2100_dist <- forecast_7800$value[h_calc]
+jan_2100_dist
+
+first_420_mean <- forecast_7800 %>% filter(.mean > 420)
+first_420_mean$index[1]
+
+
+fc_hilo <- forecast_7800 %>% hilo() %>% unpack_hilo('95%')
+fc_hilo <- fc_hilo %>%
+    rename(replace=c('95%_upper' = 'upper_95')) %>%
+    rename(replace=c('95%_lower' = 'lower_95'))
+
+first_420_upper <- fc_hilo %>% filter(upper_95 > 420)
+first_420_upper$index[1]
+
+last_420_lower <- fc_hilo %>% filter(lower_95 > 420)
+last_420_lower$index[1]
+```
